@@ -6,7 +6,7 @@
 ## OptionalDeps: Ace3, AceSerializer-3.0, LibDeflate
 
 ## SavedVariables: RepriseHCAchievementsDB, RepriseHCUiDB
-
+Libs\ChatThrottleLib.lua
 Core.lua
 Icons/reprise_icon.tga
 Components/TradeMailBlock.lua
