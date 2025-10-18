@@ -1,0 +1,22 @@
+## Title: RepriseHC
+## Interface: 110200,110205
+## Notes: RepriseHC Event Addon
+## Author: Phijid
+## Version: 0.0.4a
+## OptionalDeps: Ace3, AceSerializer-3.0, LibDeflate
+
+## SavedVariables: RepriseHCAchievementsDB, RepriseHCUiDB
+
+Core.lua
+Icons/reprise_icon.tga
+Components/TradeMailBlock.lua
+Achievements.lua
+AchievementsComm.lua
+Builder/CategoryDataBuilder.lua
+Ui/Ui.lua
+Components/Cards.lua
+Components/Leaderboard.lua
+Components/Standings.lua
+Components/Deathlog.lua
+Ui/Title.lua
+Dev.lua
