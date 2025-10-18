@@ -132,9 +132,8 @@ local function EarnAchievement(id, displayName, points)
 end
 
 -- ========= Sync =========
-local 
-function Broadcast(tag, payload)
-  if not RepriseHC.IsGuildAllowed() then return end
+local function Broadcast(tag, payload)
+  -- Do NOT block transport here; Comm_Send handles routing (GUILD/GROUP/WHISPER).
   if tag == "AWARD" then
     local playerKey, id, ptsStr, name = payload:match("^([^;]*);([^;]*);([^;]*);?(.*)$")
     if not playerKey or not id then return end
@@ -147,6 +146,7 @@ function Broadcast(tag, payload)
     RepriseHC.Comm_Send("DEATH", { playerKey=playerKey, level=level, class=class, race=race, zone=zone, subzone=subzone, name=name })
   end
 end
+
 local function SyncBroadcastAward(id, name, pts)
   Broadcast("AWARD", string.format("%s;%s;%d;%s", PlayerKey(), id, pts or 0, name or ""))
 end
@@ -209,8 +209,6 @@ function RepriseHC.Ach_CheckProfessions()
 end
 
 -- ========= Speedrun (Hardcore-style) =========
--- Thresholds: reach the level at or below this many HOURS of /played (total)
-
 local _speedrunPendingLevel = nil
 function RepriseHC.Ach_CheckSpeedrunOnDing(newLevel)
   if not (RepriseHC.navigation.speedrun.enabled) then return end 
@@ -361,13 +359,10 @@ function RepriseHC.Ach_CheckQuest(questID)
 end
 
 -- ========= Guild Firsts =========
-
--- Expose filtered options for UI
 function RepriseHC.Ach_GuildFirstOptions(faction)
   if not (RepriseHC.navigation.guildFirst.enabled) then return end 
   local classesOrder = { "Druid","Hunter","Mage","Paladin","Priest","Rogue","Shaman","Warlock","Warrior" }
   local racesOrder   = { "Dwarf","Gnome","Human","Night Elf","Orc","Undead","Tauren","Troll" }
-  -- Build reverse map: display name -> faction from our tables
   local classFactionByName = {}
   for token,info in pairs(RepriseHC.class) do
     local disp = (type(info)=="table" and info.name) or info
@@ -380,7 +375,6 @@ function RepriseHC.Ach_GuildFirstOptions(faction)
     local fac  = (type(info)=="table" and info.faction) or nil
     raceFactionByName[disp] = fac
   end
-
   local outClasses, outRaces = {}, {}
   for _,name in ipairs(classesOrder) do
     local fac = classFactionByName[name]
@@ -474,7 +468,7 @@ end
 
 -- ========= Death Log =========
 local function CaptureDeath()
-  if not RepriseHC.IsGuildAllowed() then return end
+  -- Always capture locally and broadcast; routing/retries handle delivery.
   local level = UnitLevel("player") or 0
   local _, eclass = UnitClass("player")
   local _, erace = UnitRace("player")
@@ -482,15 +476,23 @@ local function CaptureDeath()
   local sub = GetSubZoneText() or ""
   local name = UnitName("player") or PlayerKey()
   local pkey = PlayerKey()
+
   local seen = false
   for _,d in ipairs(RepriseHC.GetDeathLog()) do if d.playerKey==pkey then seen=true break end end
+
   if not seen then
     table.insert(RepriseHC.GetDeathLog(), { playerKey=pkey, name=name, level=level, class=eclass, race=erace, zone=zone, subzone=sub, when=time() })
+
+    -- Broadcast now + light retries (covers guild roster settling)
     SyncBroadcastDeath(level, eclass, erace, zone, sub, name)
+    C_Timer.After(5,  function() SyncBroadcastDeath(level, eclass, erace, zone, sub, name) end)
+    C_Timer.After(12, function() SyncBroadcastDeath(level, eclass, erace, zone, sub, name) end)
+
     Print(("Death recorded: %s (%s %s %d) in %s%s%s"):format(name, erace or "Race", eclass or "Class", level, zone or "?", sub~="" and " - " or "", sub))
     if (RepriseHC.GetShowToGuild()) then
       SendChatMessage(("![DEATH]! %s died at Level: %d o7 Homie"):format(name,level), "GUILD", GetDefaultLanguage("player"))
     end
+    if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
   end
 end
 
@@ -518,8 +520,6 @@ function RepriseHC.DeathStats()
 end
 
 -- ========= Event wiring via Core event bus =========
--- Remove the standalone EVT frame and rely on RepriseHC.RegisterEvent to avoid duplicates.
-
 local inPartyInstance = false
 local function UpdateInstanceState()
   local _, _, _, _, _, _, _, _, _, instanceType = GetInstanceInfo()
@@ -532,7 +532,6 @@ local function OnCombatLogEvent()
   local _, subevent, _, srcGUID, _, srcFlags, _, dstGUID = CombatLogGetCurrentEventInfo()
   if subevent ~= "UNIT_DIED" then return end
 
-  -- if not inPartyInstance or not dstGUID then return end
   local parts = { strsplit("-", dstGUID or "") }
   local idPart = parts[6]
   local npcid = tonumber(idPart)
@@ -555,9 +554,7 @@ end
 
 local function __RHC_Ach_OnEvent(event, ...)
   if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
-    C_Timer.After(0, function()
-      UpdateInstanceState()
-    end)
+    C_Timer.After(0, function() UpdateInstanceState() end)
     C_Timer.After(1.0, function()
       if RepriseHC.IsGuildAllowed and RepriseHC.IsGuildAllowed() then
         local level = UnitLevel("player") or 1
@@ -584,6 +581,7 @@ local function __RHC_Ach_OnEvent(event, ...)
       RepriseHC.Ach_CheckProfessions()
     end
   elseif event == "PLAYER_DEAD" then
+    -- No gate here: we already handle routing/retries inside CaptureDeath()
     CaptureDeath()
   elseif event == "QUEST_TURNED_IN" then
     local questID = ...
