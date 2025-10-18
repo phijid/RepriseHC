@@ -1,6 +1,6 @@
 RepriseHC = {}
 RepriseHC.name = "RepriseHC"
-RepriseHC.version = "0.0.5a"
+RepriseHC.version = "0.2.0a"
 RepriseHC.allowedGuilds = { ["Reprise"] = true, ["RepriseHC"] = true, ["Frontier"] = true, ["Midnight Guardians"] = true }
 
 -- ===== Useful to be global ===== 
