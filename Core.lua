@@ -7,6 +7,7 @@ RepriseHC.allowedGuilds = { ["Reprise"] = true, ["RepriseHC"] = true, ["Frontier
 
 RepriseHC.levelCap = 20
 RepriseHC.levels = {10,20,30,40,50,60}
+RepriseHC.showToGuild = true
 
 RepriseHC.speedrunThresholds = {
   [10] = 2,   -- reach 10 under 2 hours
@@ -119,6 +120,10 @@ end
 
 function RepriseHC.GetLevelCap()
   return RepriseHC.levelCap or 60
+end
+
+function RepriseHC.GetShowToGuild()
+  return RepriseHC.showToGuild or false
 end
 
 function RepriseHC.MaxMilestone()
