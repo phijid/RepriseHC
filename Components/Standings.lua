@@ -35,6 +35,12 @@ local function IsDead(playerKey)
   return false
 end
 
+local GROUP_SET = (function()
+  local t = {}
+  for _, g in ipairs(GROUPS) do t[g] = true end
+  return t
+end)()
+
 -- Build totals (excluding dead) and member lists (including dead)
 local function CalcGroupStandings()
   local db = DB_SAFE(); if not db then return nil, nil end
@@ -42,19 +48,20 @@ local function CalcGroupStandings()
   local members = {}
   for _, g in ipairs(GROUPS) do totals[g] = 0; members[g] = {} end
 
-  for key, char in pairs(db.characters) do
-    local g = db.groupAssignments[key]
-    if g and totals[g] then
-      local pts  = tonumber(char.points) or 0
-      local dead = IsDead(key)
+  -- Iterate over assignments so members with 0 points still appear
+  for key, g in pairs(db.groupAssignments) do
+    if GROUP_SET[g] then
+      local char  = db.characters[key]
+      local pts   = tonumber(char and char.points) or 0
+      local dead  = IsDead(key)
       if not dead then
-        totals[g] = totals[g] + pts       -- only alive characters add to totals
+        totals[g] = totals[g] + pts   -- only alive add to totals
       end
       table.insert(members[g], { key = key, points = pts, dead = dead })
     end
   end
 
-  -- sort each group's members by points desc (alive/dead mixed, still by earned points)
+  -- Sort members by points desc
   for _, g in ipairs(GROUPS) do
     table.sort(members[g], function(a,b) return a.points > b.points end)
   end

@@ -183,7 +183,7 @@ local function HardResetDB()
   RepriseHCAchievementsDB.deathLog = {}
   RepriseHCAchievementsDB.groupAssignments = {}
 
-  RepriseHC.Print("|cffff6060All achievements, points, and Guild Firsts have been RESET!|r")
+  RepriseHC.Print("|cffff6060Cleaned!|r")
 
   C_Timer.After(0, function()
     if RepriseHC_UI and RepriseHC_UI:IsShown() then
