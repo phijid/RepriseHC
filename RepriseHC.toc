@@ -18,7 +18,6 @@ Libs\AceComm-3.0\AceComm-3.0.lua
 # --- My addon files ---
 Core.lua
 AchievementsComm.lua
-Icons/reprise_icon.tga
 Components/TradeMailBlock.lua
 Achievements.lua
 Builder/CategoryDataBuilder.lua
