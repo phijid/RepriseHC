@@ -94,18 +94,18 @@ end
 
 -- Whisper N online guildies (rotating) as reliability fan-out (dedupe on RX)
 local whisperIdx = 1
+
 local function IsSelfGuildName(fullname)
   if not fullname or fullname == "" then return false end
-  -- Compare both the short ("Name") and the full ("Name-Realm") against the player
   local short = Ambiguate(fullname, "short")
   return UnitIsUnit(short, "player") or UnitIsUnit(fullname, "player")
 end
 
 local function SendWhisperFallback(payload, maxPeers)
-  maxPeers = maxPeers or 3
+  maxPeers = maxPeers or 12  -- bigger fan-out helps new invitees in large guilds
   if not IsInGuild() then return false end
 
-  -- Refresh roster best-effort (C_GuildInfo on retail/SoD, GuildRoster on Classic)
+  -- Refresh roster best-effort (Classic-safe)
   if C_GuildInfo and C_GuildInfo.GuildRoster then
     C_GuildInfo.GuildRoster()
   else
@@ -115,18 +115,35 @@ local function SendWhisperFallback(payload, maxPeers)
   local count = GetNumGuildMembers() or 0
   if count == 0 then return false end
 
-  local sent = 0
+  local sent, seen = 0, {}
 
-  -- First pass: try to whisper someone not ourselves and online (rotating start)
-  for i = 1, count do
-    local idx = ((whisperIdx + i - 2) % count) + 1
-    local name, _, _, _, _, _, _, _, online = GetGuildRosterInfo(idx)
-    if online and name and not IsSelfGuildName(name) then
+  local function trySendToIndex(i)
+    local name, _, rankIndex, _, _, _, _, _, online = GetGuildRosterInfo(i)
+    if online and name and not IsSelfGuildName(name) and not seen[name] then
       local target = Ambiguate(name, "none")
       AceComm:SendCommMessage(PREFIX, payload, "WHISPER", target)
+      seen[name] = true
       sent = sent + 1
-      if sent >= maxPeers then break end
+      return true
     end
+    return false
+  end
+
+  -- 1) Prefer the Guild Master (rankIndex == 0) so at least GM always sees it
+  for i = 1, count do
+    local _, _, rankIndex = GetGuildRosterInfo(i)
+    if rankIndex == 0 then
+      trySendToIndex(i)
+      break
+    end
+  end
+  if sent >= maxPeers then whisperIdx = whisperIdx + 1; return true end
+
+  -- 2) Rotate through the roster and fill up to maxPeers
+  for i = 1, count do
+    local idx = ((whisperIdx + i - 2) % count) + 1
+    trySendToIndex(idx)
+    if sent >= maxPeers then break end
   end
 
   whisperIdx = whisperIdx + 1
@@ -271,18 +288,18 @@ function RepriseHC.Comm_Send(topic, payloadTable)
     usedGroup = SendViaGroup(wire)
   end
 
+  -- Always whisper a wider set for DEATH; catches brand-new guild joins in large rosters
   if topic == "DEATH" then
-    SendWhisperFallback(wire, 4)
+    SendWhisperFallback(wire, 12)
   end
 
-  -- Fan-out: always for DEATH; also before first snapshot.
+  -- Late safety resend for DEATH (roster/channel stabilizes a bit later)
   if topic == "DEATH" then
     local late = wire
     C_Timer.After(25, function()
-      -- try guild/group again, then whisper a few peers
       local ok = SendViaGuild(late)
       if not ok then ok = SendViaGroup(late) end
-      SendWhisperFallback(late, 4)
+      SendWhisperFallback(late, 12)
     end)
   end
 end
