@@ -10,6 +10,7 @@ local AceSer  = assert(LibStub("AceSerializer-3.0"))
 
 -- Namespace
 RepriseHC = RepriseHC or {}
+AceComm:Embed(RepriseHC)
 
 -- -------- identity / envelope / seq --------
 local function SelfId()
@@ -290,7 +291,7 @@ F:SetScript("OnEvent", function(_, ev)
 end)
 
 -- -------- AceComm receiver registration --------
-AceComm:UnregisterComm(PREFIX)
-AceComm:RegisterComm(PREFIX, function(_, prefix, msg, dist, sender)
+RepriseHC:UnregisterComm(PREFIX)
+RepriseHC:RegisterComm(PREFIX, function(_, prefix, msg, dist, sender)
   HandleIncoming(prefix, msg, dist, sender)
 end)
