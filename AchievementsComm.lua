@@ -296,6 +296,6 @@ end)
 
 -- -------- AceComm receiver registration --------
 RepriseHC:UnregisterComm(PREFIX)
-RepriseHC:RegisterComm(PREFIX, function(_, prefix, msg, dist, sender)
+RepriseHC:RegisterComm(PREFIX, function(prefix, msg, dist, sender)
   HandleIncoming(prefix, msg, dist, sender)
 end)
