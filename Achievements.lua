@@ -477,7 +477,9 @@ function CaptureDeath()
   local name      = UnitName("player") or (RepriseHC and RepriseHC.PlayerKey and RepriseHC.PlayerKey()) or "Unknown"
 
   local pkey = (RepriseHC and RepriseHC.PlayerKey and RepriseHC.PlayerKey()) or name
-  -- de-dupe: don't double insert same playerKey
+
+  -- de-dupe insert
+  local inserted = false
   local log = RepriseHC.GetDeathLog and RepriseHC.GetDeathLog() or nil
   if log then
     for _, d in ipairs(log) do
@@ -493,15 +495,25 @@ function CaptureDeath()
       subzone   = sub,
       when      = time(),
     })
+    inserted = true
+  end
+
+  -- one-time guild echo from the dying client (no spam from receivers)
+  if inserted and IsInGuild() and RepriseHC.GetShowToGuild and RepriseHC.GetShowToGuild() then
+    local where = zone ~= "" and zone or "Unknown"
+    if sub and sub ~= "" then where = where .. " - " .. sub end
+    local lvl = tonumber(level or 0) or 0
+    local msg = string.format("%s has died (lvl %d) in %s.", name or "Unknown", lvl, where)
+    SendChatMessage(msg, "GUILD", GetDefaultLanguage("player"))
+    -- (If you ever see language issues, passing nil here is also fine: SendChatMessage(msg, "GUILD"))
   end
 
   local function send()
     if RepriseHC and RepriseHC.SyncBroadcastDeath then
       RepriseHC.SyncBroadcastDeath(level, eclass, erace, zone, sub, name)
     elseif RepriseHC and RepriseHC.Comm_Send then
-      -- fallback if you broadcast directly via Comm
       RepriseHC.Comm_Send("DEATH", {
-        playerKey = (RepriseHC and RepriseHC.PlayerKey and RepriseHC.PlayerKey()) or name,
+        playerKey = pkey,
         name      = name,
         level     = level,
         class     = eclass,
@@ -512,11 +524,12 @@ function CaptureDeath()
     end
   end
 
-  -- Initial tiny delay lets GUILD route latch after death/zone state changes
+  -- small delay + retries to tolerate channel flaps
   C_Timer.After(1.0,  send)
   C_Timer.After(6.0,  send)
   C_Timer.After(15.0, send)
 end
+
 
 -- Quick stats helpers for UI
 function RepriseHC.DeathStats()
