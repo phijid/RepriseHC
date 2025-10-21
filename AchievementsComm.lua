@@ -95,17 +95,22 @@ end
 -- Whisper N online guildies (rotating) as reliability fan-out (dedupe on RX)
 local whisperIdx = 1
 
-local function IsSelfGuildName(fullname)
+local function IsSelf(fullname)
   if not fullname or fullname == "" then return false end
   local short = Ambiguate(fullname, "short")
-  return UnitIsUnit(short, "player") or UnitIsUnit(fullname, "player")
+  return UnitIsUnit("player", short) or UnitIsUnit("player", fullname)
+end
+
+local RHC_DEBUG = true  -- set true to print who we whisper
+
+local function debugPrint(...)
+  if RHC_DEBUG and print then print("|cff99ccff[RHC]|r", ...) end
 end
 
 local function SendWhisperFallback(payload, maxPeers)
-  maxPeers = maxPeers or 12  -- bigger fan-out helps new invitees in large guilds
+  maxPeers = maxPeers or 12
   if not IsInGuild() then return false end
 
-  -- Refresh roster best-effort (Classic-safe)
   if C_GuildInfo and C_GuildInfo.GuildRoster then
     C_GuildInfo.GuildRoster()
   else
@@ -115,13 +120,35 @@ local function SendWhisperFallback(payload, maxPeers)
   local count = GetNumGuildMembers() or 0
   if count == 0 then return false end
 
+  -- === Special case: exactly 2 online (me + one other) -> target them explicitly ===
+  local onlineNames = {}
+  for i = 1, count do
+    local name, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
+    if online and name then table.insert(onlineNames, name) end
+  end
+
+  if #onlineNames == 2 then
+    local other = IsSelf(onlineNames[1]) and onlineNames[2] or onlineNames[1]
+    if other and not IsSelf(other) then
+      local full  = Ambiguate(other, "none")  -- "Name-Realm"
+      local short = Ambiguate(other, "short") -- "Name"
+      -- Send both forms (AceComm/SendAddonMessage handles dedupe on RX by content)
+      AceComm:SendCommMessage(PREFIX, payload, "WHISPER", full)
+      AceComm:SendCommMessage(PREFIX, payload, "WHISPER", short)
+      debugPrint("DEATH direct-whisper 2-online ->", full, "/", short)
+      return true
+    end
+  end
+
+  -- === General case: rotate through roster, prefer GM, exclude self ===
   local sent, seen = 0, {}
 
-  local function trySendToIndex(i)
-    local name, _, rankIndex, _, _, _, _, _, online = GetGuildRosterInfo(i)
-    if online and name and not IsSelfGuildName(name) and not seen[name] then
+  local function trySendIndex(i)
+    local name, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
+    if online and name and not IsSelf(name) and not seen[name] then
       local target = Ambiguate(name, "none")
       AceComm:SendCommMessage(PREFIX, payload, "WHISPER", target)
+      debugPrint("fanout ->", target)
       seen[name] = true
       sent = sent + 1
       return true
@@ -129,20 +156,17 @@ local function SendWhisperFallback(payload, maxPeers)
     return false
   end
 
-  -- 1) Prefer the Guild Master (rankIndex == 0) so at least GM always sees it
+  -- Prefer GM
   for i = 1, count do
     local _, _, rankIndex = GetGuildRosterInfo(i)
-    if rankIndex == 0 then
-      trySendToIndex(i)
-      break
-    end
+    if rankIndex == 0 then trySendIndex(i); break end
   end
   if sent >= maxPeers then whisperIdx = whisperIdx + 1; return true end
 
-  -- 2) Rotate through the roster and fill up to maxPeers
+  -- Rotate
   for i = 1, count do
     local idx = ((whisperIdx + i - 2) % count) + 1
-    trySendToIndex(idx)
+    trySendIndex(idx)
     if sent >= maxPeers then break end
   end
 
@@ -288,13 +312,11 @@ function RepriseHC.Comm_Send(topic, payloadTable)
     usedGroup = SendViaGroup(wire)
   end
 
-  -- Always whisper a wider set for DEATH; catches brand-new guild joins in large rosters
   if topic == "DEATH" then
+    -- immediate direct whisper(s)
     SendWhisperFallback(wire, 12)
-  end
 
-  -- Late safety resend for DEATH (roster/channel stabilizes a bit later)
-  if topic == "DEATH" then
+    -- late safety resend (kept)
     local late = wire
     C_Timer.After(25, function()
       local ok = SendViaGuild(late)
@@ -303,6 +325,7 @@ function RepriseHC.Comm_Send(topic, payloadTable)
     end)
   end
 end
+
 
 -- -------- startup & retries --------
 local F = CreateFrame("Frame")
