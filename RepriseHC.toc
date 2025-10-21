@@ -8,10 +8,10 @@
 ## SavedVariables: RepriseHCAchievementsDB, RepriseHCUiDB
 Libs\ChatThrottleLib.lua
 Core.lua
+AchievementsComm.lua
 Icons/reprise_icon.tga
 Components/TradeMailBlock.lua
 Achievements.lua
-AchievementsComm.lua
 Builder/CategoryDataBuilder.lua
 Ui/Ui.lua
 Components/Cards.lua

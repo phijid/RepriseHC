@@ -467,33 +467,48 @@ function RepriseHC.Ach_GetEarners(achId)
 end
 
 -- ========= Death Log =========
-local function CaptureDeath()
-  -- Always capture locally and broadcast; routing/retries handle delivery.
+function CaptureDeath()
   local level = UnitLevel("player") or 0
   local _, eclass = UnitClass("player")
-  local _, erace = UnitRace("player")
-  local zone = GetZoneText() or ""
-  local sub = GetSubZoneText() or ""
-  local name = UnitName("player") or PlayerKey()
-  local pkey = PlayerKey()
+  local _, erace  = UnitRace("player")
+  local zone      = GetZoneText() or ""
+  local sub       = GetSubZoneText() or ""
+  local name      = UnitName("player") or (RepriseHC and RepriseHC.PlayerKey and RepriseHC.PlayerKey()) or "Unknown"
 
-  local seen = false
-  for _,d in ipairs(RepriseHC.GetDeathLog()) do if d.playerKey==pkey then seen=true break end end
-
-  if not seen then
-    table.insert(RepriseHC.GetDeathLog(), { playerKey=pkey, name=name, level=level, class=eclass, race=erace, zone=zone, subzone=sub, when=time() })
-
-    -- Broadcast now + light retries (covers guild roster settling)
-    SyncBroadcastDeath(level, eclass, erace, zone, sub, name)
-    C_Timer.After(5,  function() SyncBroadcastDeath(level, eclass, erace, zone, sub, name) end)
-    C_Timer.After(12, function() SyncBroadcastDeath(level, eclass, erace, zone, sub, name) end)
-
-    Print(("Death recorded: %s (%s %s %d) in %s%s%s"):format(name, erace or "Race", eclass or "Class", level, zone or "?", sub~="" and " - " or "", sub))
-    if (RepriseHC.GetShowToGuild()) then
-      SendChatMessage(("![DEATH]! %s died at Level: %d o7 Homie"):format(name,level), "GUILD", GetDefaultLanguage("player"))
+  local pkey = (RepriseHC and RepriseHC.PlayerKey and RepriseHC.PlayerKey()) or name
+  -- de-dupe: don't double insert same playerKey
+  local log = RepriseHC.GetDeathLog and RepriseHC.GetDeathLog() or nil
+  if log then
+    for _, d in ipairs(log) do
+      if d.playerKey == pkey then return end
     end
-    if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
+    table.insert(log, {
+      playerKey = pkey,
+      name      = name,
+      level     = level,
+      class     = eclass,
+      race      = erace,
+      zone      = zone,
+      subzone   = sub,
+      when      = time(),
+    })
   end
+
+  local function send()
+    if RepriseHC and RepriseHC.SyncBroadcastDeath then
+      RepriseHC.SyncBroadcastDeath(level, eclass, erace, zone, sub, name)
+    elseif RepriseHC and RepriseHC.Comm_Send then
+      -- fallback if you broadcast directly via Comm
+      RepriseHC.Comm_Send("DEATH", {
+        name=name, level=level, class=eclass, race=erace, zone=zone, subzone=sub,
+      })
+    end
+  end
+
+  -- Initial tiny delay lets GUILD route latch after death/zone state changes
+  C_Timer.After(1.0,  send)
+  C_Timer.After(6.0,  send)
+  C_Timer.After(15.0, send)
 end
 
 -- Quick stats helpers for UI

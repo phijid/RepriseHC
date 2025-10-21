@@ -1,25 +1,28 @@
 -- AchievementsComm.lua — Classic-safe, CTL-powered comms for RepriseHC
 -- Prefix: RepriseHC_ACH
 -- Transport strategy (Classic-safe):
---   1) Prefer GUILD (only when GetGuildInfo("player") is non-nil)
---   2) Else GROUP route (RAID or PARTY if in a group)
---   3) Else WHISPER fanout to a few online guildies (rotating)
+--   1) Prefer GUILD (only when GetGuildInfo("player") is non-nil and we've waited a few seconds)
+--   2) Else GROUP (RAID/PARTY)
+--   3) Always WHISPER fan-out for DEATH (dedupe on RX prevents dupes)
 -- Uses ChatThrottleLib if available for reliable bandwidth/throttle handling.
 
 local PREFIX = "RepriseHC_ACH"
 C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
 
--- ===== libs =====
-local CTL      = _G.ChatThrottleLib   -- optional but preferred
+-- ===== libs (optional) =====
+local CTL      = _G.ChatThrottleLib                 -- preferred if present
 local AceSer   = LibStub and LibStub("AceSerializer-3.0", true)
 local Deflate  = LibStub and LibStub("LibDeflate", true)
 
--- ===== helpers: identity / envelope / seq =====
+-- ===== Reprise namespace & helpers =====
 RepriseHC = RepriseHC or {}
+
 local function SelfId()
   local name, realm = UnitName("player"); realm = realm or GetRealmName()
   return (realm and realm ~= "" and (name.."-"..realm)) or name or "player"
 end
+
+-- Envelope + sequence (for RX dup suppression)
 local function Envelope(topic, payload)
   RepriseHC._seq = (RepriseHC._seq or 0) + 1
   return { v=1, t=topic, ts=GetServerTime(), s=SelfId(), q=RepriseHC._seq, p=payload or {} }
@@ -68,51 +71,55 @@ local function TryDecodeLegacy(payload)
   end
 end
 
--- ===== dedupe by sender sequence =====
-local lastSeqBySender = {} -- [sender]=lastQ
-local function IsDup(sender, q)
-  if (q or 0) <= 0 then return false end
-  local last = lastSeqBySender[sender]
-  if not last or q > last then lastSeqBySender[sender] = q; return false end
-  return true
+-- ===== guild readiness grace =====
+local lastGuildTouch = 0
+local function MarkGuildTouched() lastGuildTouch = GetTime() end
+local function GuildRouteReady()
+  if not IsInGuild() then return false end
+  if not GetGuildInfo("player") then return false end
+  return (GetTime() - (lastGuildTouch or 0)) > 3
 end
 
--- ===== Classic-safe routing (no CHANNEL) =====
-local function guildReady() return IsInGuild() and (GetGuildInfo("player") ~= nil) end
+do
+  local f = CreateFrame("Frame")
+  f:RegisterEvent("PLAYER_ENTERING_WORLD")
+  f:RegisterEvent("PLAYER_GUILD_UPDATE")
+  f:RegisterEvent("GUILD_ROSTER_UPDATE")
+  f:SetScript("OnEvent", function(_, ev)
+    if ev == "PLAYER_ENTERING_WORLD" or ev == "PLAYER_GUILD_UPDATE" or ev == "GUILD_ROSTER_UPDATE" then
+      MarkGuildTouched()
+    end
+  end)
+end
 
+-- ===== routing (one unified stack) =====
 local function sendRoute(route, payload, target)
   if CTL then
-    if target then
-      CTL:SendAddonMessage("NORMAL", PREFIX, payload, route, target)
-    else
-      CTL:SendAddonMessage("NORMAL", PREFIX, payload, route)
-    end
+    if target then CTL:SendAddonMessage("NORMAL", PREFIX, payload, route, target)
+    else CTL:SendAddonMessage("NORMAL", PREFIX, payload, route) end
   else
-    if target then
-      C_ChatInfo.SendAddonMessage(PREFIX, payload, route, target)
-    else
-      C_ChatInfo.SendAddonMessage(PREFIX, payload, route)
-    end
+    if target then C_ChatInfo.SendAddonMessage(PREFIX, payload, route, target)
+    else C_ChatInfo.SendAddonMessage(PREFIX, payload, route) end
   end
 end
 
-local function SendGuild(payload)
-  if guildReady() then sendRoute("GUILD", payload); return true end
+local function SendViaGuild(payload)
+  if GuildRouteReady() then sendRoute("GUILD", payload); return true end
   return false
 end
 
-local function SendGroup(payload)
-  if IsInRaid() then sendRoute("RAID",  payload); return true end
+local function SendViaGroup(payload)
+  if IsInRaid()  then sendRoute("RAID",  payload); return true end
   if IsInGroup() then sendRoute("PARTY", payload); return true end
   return false
 end
 
--- Whisper up to N online guild members (rotating) as a temporary fallback
+-- Whisper up to N online guild members (rotating) as a reliability fan-out
 local whisperIdx = 1
 local function SendWhisperFallback(payload, maxPeers)
   maxPeers = maxPeers or 3
   if not IsInGuild() then return false end
-  GuildRoster() -- refresh-ish (Classic)
+  if C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() end
   local count = GetNumGuildMembers() or 0
   if count == 0 then return false end
   local me = UnitName("player")
@@ -121,7 +128,7 @@ local function SendWhisperFallback(payload, maxPeers)
     local idx = ((whisperIdx + i - 2) % count) + 1
     local name, _, _, _, _, _, _, _, online = GetGuildRosterInfo(idx)
     if online and name and name ~= me then
-      sendRoute("WHISPER", payload, name)
+      sendRoute("WHISPER", payload, Ambiguate(name, "none"))
       sent = sent + 1
       if sent >= maxPeers then break end
     end
@@ -130,11 +137,13 @@ local function SendWhisperFallback(payload, maxPeers)
   return sent > 0
 end
 
--- ===== build wire payloads (structured first, legacy fallback) =====
+-- ===== wire building (single authoritative version) =====
 local function BuildWire(topic, payloadTable)
+  -- structured path first
   local packed = Encode(Envelope(topic, payloadTable or {}))
   if packed then return packed end
-  -- Legacy fallbacks
+
+  -- legacy fallbacks (keep compatibility with manual /run tests)
   if topic == "ACH" then
     local p = payloadTable or {}
     return string.format("AWARD;%s;%s;%d;%s",
@@ -146,28 +155,14 @@ local function BuildWire(topic, payloadTable)
       tostring(p.playerKey or UnitName("player")),
       tonumber(p.level or UnitLevel("player") or 0),
       tostring(p.class or select(2,UnitClass("player")) or ""),
-      tostring(p.race or select(2,UnitRace("player")) or ""),
-      tostring(p.zone or GetZoneText() or ""),
+      tostring(p.race  or select(2,UnitRace("player")) or ""),
+      tostring(p.zone  or GetZoneText()     or ""),
       tostring(p.subzone or GetSubZoneText() or ""),
-      tostring(p.name or UnitName("player") or ""))
+      tostring(p.name  or UnitName("player") or ""))
   elseif topic == "REQSNAP" then
     return "REQ"
   elseif topic == "SNAP" then
-    return nil -- needs structured on sender
-  end
-end
-
--- ===== public send (Classic multi-path) =====
-function RepriseHC.Comm_Send(topic, payloadTable)
-  local wire = BuildWire(topic, payloadTable)
-  if not wire then return end
-
-  -- Try GUILD; else GROUP; else WHISPER fanout.
-  local delivered = SendGuild(wire)
-  if not delivered then delivered = SendGroup(wire) end
-  if not delivered then
-    -- Fresh invites / solo: WHISPER a few online guildies (dedupe on RX keeps it safe)
-    SendWhisperFallback(wire, (topic == "SNAP") and 2 or 4)
+    return nil -- SNAP is structured-only
   end
 end
 
@@ -211,7 +206,7 @@ local function AnswerSnapshot()
   if AceSer then
     RepriseHC.Comm_Send("SNAP", { kind="SNAP", data=snap })
   else
-    -- Legacy streaming (bounded) using the same multipath send
+    -- legacy streaming (bounded)
     local sent = 0
     for id, char in pairs(snap.characters or {}) do
       for achId, a in pairs(char.achievements or {}) do
@@ -230,6 +225,15 @@ local function AnswerSnapshot()
       sent = sent + 1; if sent > 600 then break end
     end
   end
+end
+
+-- ===== dedupe by sender sequence =====
+local lastSeqBySender = {} -- [sender]=lastQ
+local function IsDup(sender, q)
+  if (q or 0) <= 0 then return false end
+  local last = lastSeqBySender[sender]
+  if not last or q > last then lastSeqBySender[sender] = q; return false end
+  return true
 end
 
 -- ===== receiver =====
@@ -282,6 +286,35 @@ function RepriseHC.Comm_OnAddonMessage(prefix, payload, channel, sender)
   HandleIncoming(prefix, payload, channel, sender)
 end
 
+-- Helper to expose snapshot state elsewhere if you want
+function RepriseHC.Comm_HasSnapshot() return haveSnapshot end
+
+-- ===== public send (multi-path with DEATH fan-out) =====
+local function HasSnapshotFlag()
+  -- allow an external flag if you set one, otherwise use our local latch
+  if RepriseHC and RepriseHC.Comm_HaveSnapshot then return true end
+  return haveSnapshot
+end
+
+function RepriseHC.Comm_Send(topic, payloadTable)
+  local wire = BuildWire(topic, payloadTable)
+  if not wire or wire == "" then return end
+
+  local usedGuild = SendViaGuild(wire)
+  local usedGroup = false
+  if not usedGuild then
+    usedGroup = SendViaGroup(wire)
+  end
+
+  -- For DEATH, ALWAYS fan out via a few whispers, regardless of usedGuild/usedGroup.
+  -- Before first snapshot, also be redundant.
+  if topic == "DEATH" or not HasSnapshotFlag() then
+    SendWhisperFallback(wire, (topic == "SNAP" and 2) or 4)
+  elseif (not usedGuild and not usedGroup) then
+    SendWhisperFallback(wire, 3)
+  end
+end
+
 -- ===== startup & retries =====
 local F = CreateFrame("Frame")
 F:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -293,7 +326,7 @@ local function requestWithBackoff()
   if haveSnapshot then return end
   -- Ask via multi-path (Comm_Send does routing); also send plain legacy on ready routes
   RepriseHC.Comm_Send("REQSNAP", { need="all" })
-  if guildReady() then C_ChatInfo.SendAddonMessage(PREFIX, "REQ", "GUILD") end
+  if GuildRouteReady() then C_ChatInfo.SendAddonMessage(PREFIX, "REQ", "GUILD") end
   if IsInRaid() then C_ChatInfo.SendAddonMessage(PREFIX, "REQ", "RAID")
   elseif IsInGroup() then C_ChatInfo.SendAddonMessage(PREFIX, "REQ", "PARTY") end
 end
@@ -304,7 +337,8 @@ F:SetScript("OnEvent", function(_, ev, ...)
     C_Timer.After(5,  requestWithBackoff)
     C_Timer.After(15, requestWithBackoff)
     C_Timer.After(30, requestWithBackoff)
-    -- periodic self-SNAP (structured only)
+
+    -- periodic structured SNAP (keeps peers updated)
     local function periodic()
       if AceSer then RepriseHC.Comm_Send("SNAP", { kind="SNAP", data=BuildSnapshot() }) end
       C_Timer.After(90, periodic)
