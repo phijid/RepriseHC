@@ -137,18 +137,23 @@ local function SendWhisperFallback(payload, maxPeers)
   return sent > 0
 end
 
--- ===== wire building (single authoritative version) =====
+-- ===== wire building (compat-first) =====
 local function BuildWire(topic, payloadTable)
-  -- structured path first
-  local packed = Encode(Envelope(topic, payloadTable or {}))
-  if packed then return packed end
+  -- Only SNAP uses structured encoding (when Ace libs are available).
+  if topic == "SNAP" and AceSer then
+    local packed = Encode(Envelope(topic, payloadTable or {}))
+    if packed then return packed end
+    return nil -- SNAP is structured-only; if no Ace, we'll skip sending SNAP
+  end
 
-  -- legacy fallbacks (keep compatibility with manual /run tests)
+  -- All gameplay topics below use legacy strings for maximum compatibility.
+
   if topic == "ACH" then
     local p = payloadTable or {}
     return string.format("AWARD;%s;%s;%d;%s",
       tostring(p.playerKey or UnitName("player")),
       tostring(p.id or ""), tonumber(p.pts or 0), tostring(p.name or ""))
+
   elseif topic == "DEATH" then
     local p = payloadTable or {}
     return string.format("DEAD;%s;%d;%s;%s;%s;%s;%s",
@@ -156,15 +161,15 @@ local function BuildWire(topic, payloadTable)
       tonumber(p.level or UnitLevel("player") or 0),
       tostring(p.class or select(2,UnitClass("player")) or ""),
       tostring(p.race  or select(2,UnitRace("player")) or ""),
-      tostring(p.zone  or GetZoneText()     or ""),
+      tostring(p.zone  or GetZoneText() or ""),
       tostring(p.subzone or GetSubZoneText() or ""),
       tostring(p.name  or UnitName("player") or ""))
+
   elseif topic == "REQSNAP" then
     return "REQ"
-  elseif topic == "SNAP" then
-    return nil -- SNAP is structured-only
   end
 end
+
 
 -- ===== snapshot build/merge/answer =====
 local function BuildSnapshot()

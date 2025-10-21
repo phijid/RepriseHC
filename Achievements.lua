@@ -151,8 +151,9 @@ local function SyncBroadcastAward(id, name, pts)
   Broadcast("AWARD", string.format("%s;%s;%d;%s", PlayerKey(), id, pts or 0, name or ""))
 end
 
-function SyncBroadcastDeath(level, class, race, zone, subzone, name)
-  Broadcast("DEAD", string.format("%s;%d;%s;%s;%s;%s;%s", PlayerKey(), level or 0, class or "", race or "", zone or "", subzone or "", name or ""))
+function RepriseHC.SyncBroadcastDeath(level, class, race, zone, subzone, name)
+  Broadcast("DEAD", string.format("%s;%d;%s;%s;%s;%s;%s",
+    PlayerKey(), level or 0, class or "", race or "", zone or "", subzone or "", name or ""))
 end
 
 -- ========= Level/Professions =========
