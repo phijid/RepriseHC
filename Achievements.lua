@@ -151,7 +151,7 @@ local function SyncBroadcastAward(id, name, pts)
   Broadcast("AWARD", string.format("%s;%s;%d;%s", PlayerKey(), id, pts or 0, name or ""))
 end
 
-local function SyncBroadcastDeath(level, class, race, zone, subzone, name)
+function SyncBroadcastDeath(level, class, race, zone, subzone, name)
   Broadcast("DEAD", string.format("%s;%d;%s;%s;%s;%s;%s", PlayerKey(), level or 0, class or "", race or "", zone or "", subzone or "", name or ""))
 end
 
@@ -500,7 +500,13 @@ function CaptureDeath()
     elseif RepriseHC and RepriseHC.Comm_Send then
       -- fallback if you broadcast directly via Comm
       RepriseHC.Comm_Send("DEATH", {
-        name=name, level=level, class=eclass, race=erace, zone=zone, subzone=sub,
+        playerKey = (RepriseHC and RepriseHC.PlayerKey and RepriseHC.PlayerKey()) or name,
+        name      = name,
+        level     = level,
+        class     = eclass,
+        race      = erace,
+        zone      = zone,
+        subzone   = sub,
       })
     end
   end

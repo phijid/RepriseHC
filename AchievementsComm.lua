@@ -247,6 +247,7 @@ local function HandleIncoming(prefix, payload, channel, sender)
   if IsDup(sid, q) then return end
 
   local p, topic = t.p or {}, t.t
+
   if topic == "ACH" then
     local db = RepriseHC.DB()
     db.characters[p.playerKey] = db.characters[p.playerKey] or { points=0, achievements={} }
@@ -261,12 +262,33 @@ local function HandleIncoming(prefix, payload, channel, sender)
     if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
 
   elseif topic == "DEATH" then
+    -- -------- normalize playerKey (critical for dedupe) --------
+    if not p.playerKey or p.playerKey == "" then
+      local _, myRealm = UnitName("player"); myRealm = myRealm or GetRealmName()
+      local inferred = sender
+      if not (inferred and inferred:find("-")) then
+        if p.name and p.name ~= "" and myRealm and myRealm ~= "" then
+          inferred = p.name .. "-" .. myRealm
+        else
+          inferred = p.name or sender or "?"
+        end
+      end
+      p.playerKey = inferred
+    end
+    -- also make sure we have a display name
+    if (not p.name or p.name == "") and p.playerKey and p.playerKey ~= "" then
+      p.name = p.playerKey:match("^([^%-]+)") or p.playerKey
+    end
+    -- -----------------------------------------------------------
+
     local seen = false
-    for _,d in ipairs(RepriseHC.GetDeathLog()) do if d.playerKey == p.playerKey then seen = true break end end
+    for _, d in ipairs(RepriseHC.GetDeathLog()) do
+      if d.playerKey == p.playerKey then seen = true; break end
+    end
     if not seen then
       table.insert(RepriseHC.GetDeathLog(), {
-        playerKey=p.playerKey, name=p.name, level=p.level, class=p.class, race=p.race,
-        zone=p.zone, subzone=p.subzone, when=time()
+        playerKey = p.playerKey, name = p.name, level = p.level,
+        class = p.class, race = p.race, zone = p.zone, subzone = p.subzone, when = time(),
       })
       if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
     end
@@ -281,6 +303,7 @@ local function HandleIncoming(prefix, payload, channel, sender)
     if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
   end
 end
+
 
 function RepriseHC.Comm_OnAddonMessage(prefix, payload, channel, sender)
   HandleIncoming(prefix, payload, channel, sender)
