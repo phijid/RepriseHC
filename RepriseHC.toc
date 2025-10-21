@@ -1,12 +1,21 @@
 ## Title: RepriseHC
-## Interface: 110200,110205
-## Notes: RepriseHC Event Addon
+## Interface: 11507
+## Notes: Reprise Hardcore guild addon
 ## Author: Phijid
 ## Version: 0.2.0a
-## OptionalDeps: Ace3, AceSerializer-3.0, LibDeflate
-
+## OptionalDeps: Ace3
+## X-Embeds: Ace3
 ## SavedVariables: RepriseHCAchievementsDB, RepriseHCUiDB
-Libs\ChatThrottleLib.lua
+
+# --- Embedded libs ---
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\AceEvent-3.0\AceEvent-3.0.lua
+Libs\AceSerializer-3.0\AceSerializer-3.0.lua
+Libs\AceComm-3.0\AceComm-3.0.lua
+Libs\ChatThrottleLib\ChatThrottleLib.lua
+
+# --- My addon files ---
 Core.lua
 AchievementsComm.lua
 Icons/reprise_icon.tga
