@@ -3,6 +3,11 @@
 -- Prefix: RepriseHC_ACH
 
 local PREFIX = "RepriseHC_ACH"
+local RHC_DEBUG = true  -- set true to print who we whisper
+
+if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
+  C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
+end
 
 -- Ace libs (required)
 local AceComm = assert(LibStub("AceComm-3.0"))
@@ -33,7 +38,11 @@ end
 local function TryDecodeAce(payload)
   local ok, t = AceSer:Deserialize(payload)
   if ok and type(t) == "table" then return t end
+  if RHC_DEBUG then
+    print("|cffff6666[RHC]|r AceSer deserialize failed; raw=", tostring(payload):sub(1, 40), "...")
+  end
 end
+
 
 local function TryDecodeLegacy(payload)
   if type(payload) ~= "string" then return end
@@ -101,7 +110,7 @@ local function IsSelf(fullname)
   return UnitIsUnit("player", short) or UnitIsUnit("player", fullname)
 end
 
-local RHC_DEBUG = true  -- set true to print who we whisper
+
 
 local function debugPrint(...)
   if RHC_DEBUG and print then print("|cff99ccff[RHC]|r", ...) end
@@ -245,9 +254,23 @@ local function normalizeKeyAndName(p, sender)
 end
 
 local function HandleIncoming(prefix, payload, channel, sender)
+
+  if RHC_DEBUG then
+    print("|cff99ccff[RHC RX]|r", "prefix=", prefix, "dist=", channel, "from=", sender, "len=", #tostring(payload or ""))
+  end
+
   if prefix ~= PREFIX then return end
   local t = TryDecodeAce(payload); if not t then t = TryDecodeLegacy(payload) end
-  if not t or t.v ~= 1 then return end
+  if not t then
+    if RHC_DEBUG then
+      print("|cffff6666[RHC]|r decode failed; dropping. prefix=", prefix, "from=", sender)
+    end
+    return
+  end
+  if t.v ~= 1 then
+    if RHC_DEBUG then print("|cffff6666[RHC]|r bad version", tostring(t.v)) end
+    return
+  end
 
   local sid, q = t.s or sender or "?", t.q or 0
   if IsDup(sid, q) then return end
@@ -273,25 +296,31 @@ local function HandleIncoming(prefix, payload, channel, sender)
     normalizeKeyAndName(p, sender)
 
     local seen = false
-    for _, d in ipairs(RepriseHC.GetDeathLog()) do if d.playerKey == p.playerKey then seen = true; break end end
-    if not seen then
-      table.insert(RepriseHC.GetDeathLog(), {
-        playerKey=p.playerKey, name=p.name, level=p.level, class=p.class, race=p.race,
-        zone=p.zone, subzone=p.subzone, when=time()
-      })
-      if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
+    for _, d in ipairs(RepriseHC.GetDeathLog()) do
+      if d.playerKey == p.playerKey then seen = true; break end
+    end
+    if seen then
+      if RHC_DEBUG then print("|cff99ccff[RHC]|r DEATH already logged for", p.playerKey, "— skipping") end
+      return
     end
 
-  elseif topic == "REQSNAP" then
-    RepriseHC.Comm_Send("SNAP", { kind="SNAP", data=BuildSnapshot() })
-
-  elseif topic == "SNAP" and p and p.data then
-    MergeSnapshot(p.data)
-    haveSnapshot = true
-    if RepriseHC.Print then RepriseHC.Print("Synchronized snapshot.") end
+    table.insert(RepriseHC.GetDeathLog(), {
+      playerKey=p.playerKey, name=p.name, level=p.level, class=p.class, race=p.race,
+      zone=p.zone, subzone=p.subzone, when=time()
+    })
+    if RHC_DEBUG then print("|cff99ccff[RHC]|r DEATH inserted for", p.playerKey) end
     if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
+
+    elseif topic == "REQSNAP" then
+      RepriseHC.Comm_Send("SNAP", { kind="SNAP", data=BuildSnapshot() })
+
+    elseif topic == "SNAP" and p and p.data then
+      MergeSnapshot(p.data)
+      haveSnapshot = true
+      if RepriseHC.Print then RepriseHC.Print("Synchronized snapshot.") end
+      if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
+    end
   end
-end
 
 -- Expose for any external calls (and unit tests)
 RepriseHC.Comm_OnAddonMessage = HandleIncoming
@@ -357,7 +386,7 @@ F:SetScript("OnEvent", function(_, ev)
 end)
 
 -- -------- AceComm receiver registration --------
-RepriseHC:UnregisterComm(PREFIX)
+RepriseHC:UnregisterComm(PREFIX)  -- safe if not registered yet
 RepriseHC:RegisterComm(PREFIX, function(prefix, msg, dist, sender)
   HandleIncoming(prefix, msg, dist, sender)
 end)
