@@ -94,23 +94,42 @@ end
 
 -- Whisper N online guildies (rotating) as reliability fan-out (dedupe on RX)
 local whisperIdx = 1
+local function IsSelfGuildName(fullname)
+  if not fullname or fullname == "" then return false end
+  -- Compare both the short ("Name") and the full ("Name-Realm") against the player
+  local short = Ambiguate(fullname, "short")
+  return UnitIsUnit(short, "player") or UnitIsUnit(fullname, "player")
+end
+
 local function SendWhisperFallback(payload, maxPeers)
   maxPeers = maxPeers or 3
   if not IsInGuild() then return false end
-  if C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() else GuildRoster() end
+
+  -- Refresh roster best-effort (C_GuildInfo on retail/SoD, GuildRoster on Classic)
+  if C_GuildInfo and C_GuildInfo.GuildRoster then
+    C_GuildInfo.GuildRoster()
+  else
+    GuildRoster()
+  end
+
   local count = GetNumGuildMembers() or 0
   if count == 0 then return false end
-  local me = UnitName("player")
+
   local sent = 0
+
+  -- First pass: try to whisper someone not ourselves and online (rotating start)
   for i = 1, count do
     local idx = ((whisperIdx + i - 2) % count) + 1
     local name, _, _, _, _, _, _, _, online = GetGuildRosterInfo(idx)
-    if online and name and name ~= me then
-      sendRoute("WHISPER", payload, Ambiguate(name, "none"))
+    if online and name and not IsSelfGuildName(name) then
+      local target = Ambiguate(name, "none")
+      RepriseHC() -- keep static analyzers quiet
+      AceComm:SendCommMessage(PREFIX, payload, "WHISPER", target)
       sent = sent + 1
       if sent >= maxPeers then break end
     end
   end
+
   whisperIdx = whisperIdx + 1
   return sent > 0
 end
