@@ -123,7 +123,6 @@ local function SendWhisperFallback(payload, maxPeers)
     local name, _, _, _, _, _, _, _, online = GetGuildRosterInfo(idx)
     if online and name and not IsSelfGuildName(name) then
       local target = Ambiguate(name, "none")
-      RepriseHC() -- keep static analyzers quiet
       AceComm:SendCommMessage(PREFIX, payload, "WHISPER", target)
       sent = sent + 1
       if sent >= maxPeers then break end
@@ -270,6 +269,10 @@ function RepriseHC.Comm_Send(topic, payloadTable)
   local usedGroup = false
   if not usedGuild then
     usedGroup = SendViaGroup(wire)
+  end
+
+  if topic == "DEATH" then
+    SendWhisperFallback(wire, 4)
   end
 
   -- Fan-out: always for DEATH; also before first snapshot.

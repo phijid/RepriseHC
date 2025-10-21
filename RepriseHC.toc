@@ -28,4 +28,3 @@ Components/Leaderboard.lua
 Components/Standings.lua
 Components/Deathlog.lua
 Ui/Title.lua
-Dev.lua
