@@ -254,10 +254,14 @@ function RepriseHC.Comm_Send(topic, payloadTable)
   end
 
   -- Fan-out: always for DEATH; also before first snapshot.
-  if topic == "DEATH" or not HasSnapshotFlag() then
-    SendWhisperFallback(wire, (topic == "SNAP" and 2) or 4)
-  elseif (not usedGuild and not usedGroup) then
-    SendWhisperFallback(wire, 3)
+  if topic == "DEATH" then
+    local late = wire
+    C_Timer.After(25, function()
+      -- try guild/group again, then whisper a few peers
+      local ok = SendViaGuild(late)
+      if not ok then ok = SendViaGroup(late) end
+      SendWhisperFallback(late, 4)
+    end)
   end
 end
 

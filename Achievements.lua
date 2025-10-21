@@ -505,7 +505,6 @@ function CaptureDeath()
     local lvl = tonumber(level or 0) or 0
     local msg = string.format("%s has died (lvl %d) in %s.", name or "Unknown", lvl, where)
     SendChatMessage(msg, "GUILD", GetDefaultLanguage("player"))
-    -- (If you ever see language issues, passing nil here is also fine: SendChatMessage(msg, "GUILD"))
   end
 
   local function send()
@@ -513,21 +512,18 @@ function CaptureDeath()
       RepriseHC.SyncBroadcastDeath(level, eclass, erace, zone, sub, name)
     elseif RepriseHC and RepriseHC.Comm_Send then
       RepriseHC.Comm_Send("DEATH", {
-        playerKey = pkey,
-        name      = name,
-        level     = level,
-        class     = eclass,
-        race      = erace,
-        zone      = zone,
-        subzone   = sub,
+        playerKey = pkey, name = name, level = level, class = eclass, race = erace,
+        zone = zone, subzone = sub,
       })
     end
   end
 
-  -- small delay + retries to tolerate channel flaps
-  C_Timer.After(1.0,  send)
-  C_Timer.After(6.0,  send)
-  C_Timer.After(15.0, send)
+  -- small delay + robust retries to tolerate guild/roster flaps
+  C_Timer.After(1.0,   send)
+  C_Timer.After(6.0,   send)
+  C_Timer.After(15.0,  send)
+  C_Timer.After(30.0,  send)   -- new
+  C_Timer.After(60.0,  send)   -- new
 end
 
 
