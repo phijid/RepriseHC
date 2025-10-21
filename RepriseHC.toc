@@ -10,10 +10,10 @@
 # --- Embedded libs ---
 Libs\LibStub\LibStub.lua
 Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
-Libs\AceEvent-3.0\AceEvent-3.0.lua
-Libs\AceSerializer-3.0\AceSerializer-3.0.lua
-Libs\AceComm-3.0\AceComm-3.0.lua
-Libs\ChatThrottleLib\ChatThrottleLib.lua
+Libs\ChatThrottleLib\ChatThrottleLib.lua     
+Libs\AceEvent-3.0\AceEvent-3.0.lua           
+Libs\AceSerializer-3.0\AceSerializer-3.0.lua 
+Libs\AceComm-3.0\AceComm-3.0.lua             
 
 # --- My addon files ---
 Core.lua
