@@ -4,6 +4,20 @@
 
 local PREFIX = "RepriseHC_ACH"
 local RHC_DEBUG = true  -- set true to print who we whisper
+local suppressGuildAnnouncementsUntil = 0
+
+local function debugPrint(...)
+  if RHC_DEBUG and print then print("|cff99ccff[RHC]|r", ...) end
+end
+
+local function SuppressGuildAnnouncements(seconds)
+  seconds = tonumber(seconds) or 0
+  if seconds <= 0 then return end
+  local untilTime = GetTime() + seconds
+  if untilTime > suppressGuildAnnouncementsUntil then
+    suppressGuildAnnouncementsUntil = untilTime
+  end
+end
 
 local function debugPrint(...)
   if RHC_DEBUG and print then print("|cff99ccff[RHC]|r", ...) end
@@ -361,6 +375,26 @@ local function MergeSnapshot(p)
   db.guildFirsts = db.guildFirsts or {}
   db.deathLog    = db.deathLog    or {}
 
+  local function cloneDeathEntry(src)
+    if type(src) ~= "table" then return nil end
+    local when = tonumber(src.when) or tonumber(src.time)
+    if when and when > 0 then
+      when = math.floor(when)
+    else
+      when = time()
+    end
+    return {
+      playerKey = src.playerKey,
+      name      = src.name,
+      level     = src.level,
+      class     = src.class,
+      race      = src.race,
+      zone      = src.zone,
+      subzone   = src.subzone,
+      when      = when,
+    }
+  end
+
   for k,v in pairs(p.characters or {}) do
     local lc = db.characters[k]
     if not lc or (v.points or 0) > (lc.points or 0) then db.characters[k] = v end
@@ -369,24 +403,38 @@ local function MergeSnapshot(p)
     if not db.guildFirsts[id] then db.guildFirsts[id] = entry end
   end
   
-  -- Improved death log merging with normalized comparison
-  local seen = {}
+  local incoming = p.deathLog or {}
   local function normalizeForCompare(key)
     return (key or ""):lower():gsub("%-.*$", "")
   end
-  
-  for _,d in ipairs(db.deathLog) do 
-    if d.playerKey then 
-      seen[normalizeForCompare(d.playerKey)] = true 
-    end 
+
+  local currentCount = #db.deathLog
+  if currentCount == 0 then
+    for _,d in ipairs(incoming) do
+      if d.playerKey and d.playerKey ~= "" then
+        local entry = cloneDeathEntry(d)
+        if entry then table.insert(db.deathLog, entry) end
+      end
+    end
+    return
   end
-  
-  for _,d in ipairs(p.deathLog or {}) do
+
+  local seen = {}
+  for _,d in ipairs(db.deathLog) do
     if d.playerKey then
+      seen[normalizeForCompare(d.playerKey)] = true
+    end
+  end
+
+  for _,d in ipairs(incoming) do
+    if d.playerKey and d.playerKey ~= "" then
       local norm = normalizeForCompare(d.playerKey)
       if not seen[norm] then
-        table.insert(db.deathLog, d)
-        seen[norm] = true
+        local entry = cloneDeathEntry(d)
+        if entry then
+          table.insert(db.deathLog, entry)
+          seen[norm] = true
+        end
       end
     end
   end
@@ -483,24 +531,36 @@ local function HandleIncoming(prefix, payload, channel, sender)
       return
     end
 
+    local eventWhen = tonumber(p.when) or tonumber(p.time) or time()
+    eventWhen = eventWhen > 0 and math.floor(eventWhen) or time()
     table.insert(RepriseHC.GetDeathLog(), {
       playerKey=p.playerKey, name=p.name, level=p.level, class=p.class, race=p.race,
-      zone=p.zone, subzone=p.subzone, when=p.when or time()
+      zone=p.zone, subzone=p.subzone, when=eventWhen
     })
-    
+
     if RHC_DEBUG then print("|cff99ccff[RHC]|r DEATH inserted for", p.playerKey) end
-    
+
     -- Guild announcement for received deaths (not our own)
+    local announceToGuild = false
     if IsInGuild() and RepriseHC.GetShowToGuild and RepriseHC.GetShowToGuild() then
       local myKey = RepriseHC.PlayerKey and RepriseHC.PlayerKey() or UnitName("player")
       if normalizeForCompare(p.playerKey) ~= normalizeForCompare(myKey) then
-        local where = (p.zone or "Unknown")
-        if p.subzone and p.subzone ~= "" then where = where .. " - " .. p.subzone end
-        local msg = string.format("%s has died (lvl %d) in %s.", p.name or p.playerKey or "Unknown", p.level or 0, where)
-        SendChatMessage(msg, "GUILD")
+        local now = time()
+        local age = now - (eventWhen or now)
+        if age < 0 then age = 0 end
+        local suppressed = (GetTime() < suppressGuildAnnouncementsUntil) and (channel ~= "GUILD") and (age > 5)
+        if not suppressed and age < 120 then
+          announceToGuild = true
+        end
       end
     end
-    
+    if announceToGuild then
+      local where = (p.zone or "Unknown")
+      if p.subzone and p.subzone ~= "" then where = where .. " - " .. p.subzone end
+      local msg = string.format("%s has died (lvl %d) in %s.", p.name or p.playerKey or "Unknown", p.level or 0, where)
+      SendChatMessage(msg, "GUILD")
+    end
+
     if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
 
   elseif topic == "REQSNAP" then
@@ -527,6 +587,10 @@ function RepriseHC.Comm_Send(topic, payloadTable)
   if topic == "SNAP" then
     SendSnapshotPayload(payloadTable or {}, nil)
     return
+  end
+
+  if topic == "REQSNAP" then
+    SuppressGuildAnnouncements(12)
   end
 
   local wire = BuildWire(topic, payloadTable)
