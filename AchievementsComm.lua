@@ -509,6 +509,32 @@ local function MergeSnapshot(p)
     }
   end
 
+  local function cloneDeathEntry(src)
+    if type(src) ~= "table" then return nil end
+    local when = tonumber(src.when) or tonumber(src.time)
+    if when and when > 0 then
+      when = math.floor(when)
+    else
+      when = time()
+    end
+    local pk = src.playerKey or src.player or src.name
+    if not pk or pk == "" then return nil end
+    local nm = src.name
+    if (not nm or nm == "") and type(pk) == "string" then
+      nm = pk:match("^([^%-]+)") or pk
+    end
+    return {
+      playerKey = pk,
+      name      = nm,
+      level     = src.level,
+      class     = src.class,
+      race      = src.race,
+      zone      = src.zone,
+      subzone   = src.subzone,
+      when      = when,
+    }
+  end
+
   for k,v in pairs(p.characters or {}) do
     local lc = db.characters[k]
     if not lc or (v.points or 0) > (lc.points or 0) then db.characters[k] = v end
@@ -610,6 +636,32 @@ local function MergeSnapshot(p)
         appendEntry(entry)
       end
     end
+    if match then
+      appendEntry(match)
+    end
+  end
+
+  if #staged == 0 then return end
+
+  table.sort(staged, function(a, b)
+    return (a.when or 0) < (b.when or 0)
+  end)
+
+  local seen, seenFallback = {}, {}
+  local function markSeen(entry)
+    if not entry then return end
+    local norm = normalizeEntryKey(entry)
+    if norm ~= "" and not seen[norm] then
+      seen[norm] = entry
+    end
+    local fb = fallbackKey(entry)
+    if fb and not seenFallback[fb] then
+      seenFallback[fb] = entry
+    end
+  end
+
+  for _, existing in ipairs(db.deathLog) do
+    markSeen(existing)
   end
 
   -- Ensure our own death record is restored when peers still have it.
