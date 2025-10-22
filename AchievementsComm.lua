@@ -220,6 +220,9 @@ local function SendWhisperTargets(payload, name, debugLabel)
   for _, target in ipairs(BuildWhisperTargets(name)) do
     if not IsSelf(target) then
       AceComm:SendCommMessage(PREFIX, payload, "WHISPER", target)
+      if C_ChatInfo and C_ChatInfo.SendAddonMessage then
+        C_ChatInfo.SendAddonMessage(PREFIX, payload, "WHISPER", target)
+      end
       if debugLabel then
         debugPrint(debugLabel, target)
       else
@@ -252,13 +255,6 @@ local function SendWhisperFallback(payload, maxPeers)
     if IsSelf(other) then other = onlineNames[2] end
     if other and not IsSelf(other) then
       local sent = SendWhisperTargets(payload, other, "DEATH fallback->")
-      if C_ChatInfo and C_ChatInfo.SendAddonMessage then
-        for _, target in ipairs(BuildWhisperTargets(other)) do
-          if not IsSelf(target) then
-            C_ChatInfo.SendAddonMessage(PREFIX, payload, "WHISPER", target)
-          end
-        end
-      end
       return sent
     end
   end
@@ -317,10 +313,6 @@ function BuildSnapshot()
   }
 end
 
-local function SendSmallSnapshot()
-  RepriseHC.Comm_Send("SNAP", { kind="SNAP", data=BuildSnapshot() })
-end
-
 local function SendDirectToOtherOnline(payload)
   if not IsInGuild() then return false end
   PollGuildRoster()
@@ -338,14 +330,28 @@ local function SendDirectToOtherOnline(payload)
   if not other then return false end
 
   local sent = SendWhisperTargets(payload, other, "DEATH direct->")
-  if C_ChatInfo and C_ChatInfo.SendAddonMessage then
-    for _, target in ipairs(BuildWhisperTargets(other)) do
-      if not IsSelf(target) then
-        C_ChatInfo.SendAddonMessage(PREFIX, payload, "WHISPER", target)
-      end
-    end
-  end
   return sent
+end
+
+local function SendSnapshotPayload(payloadTable, target)
+  local wire = BuildWire("SNAP", payloadTable)
+  if not wire or wire == "" then return false end
+
+  local delivered = false
+  if target and target ~= "" then
+    delivered = SendWhisperTargets(wire, target, "SNAP ->")
+  end
+
+  if delivered then return true end
+
+  if SendViaGuild(wire) then return true end
+  if SendViaGroup(wire) then return true end
+
+  return SendWhisperFallback(wire, 6)
+end
+
+local function SendSmallSnapshot()
+  SendSnapshotPayload({ kind="SNAP", data=BuildSnapshot() })
 end
 
 local function MergeSnapshot(p)
@@ -498,7 +504,7 @@ local function HandleIncoming(prefix, payload, channel, sender)
     if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
 
   elseif topic == "REQSNAP" then
-    RepriseHC.Comm_Send("SNAP", { kind="SNAP", data=BuildSnapshot() })
+    SendSnapshotPayload({ kind="SNAP", data=BuildSnapshot() }, sender)
 
   elseif topic == "SNAP" and p and p.data then
     MergeSnapshot(p.data)
@@ -518,6 +524,11 @@ function HasSnapshotFlag()
 end
 
 function RepriseHC.Comm_Send(topic, payloadTable)
+  if topic == "SNAP" then
+    SendSnapshotPayload(payloadTable or {}, nil)
+    return
+  end
+
   local wire = BuildWire(topic, payloadTable)
   if not wire or wire == "" then return end
 
