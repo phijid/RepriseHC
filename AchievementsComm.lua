@@ -68,11 +68,34 @@ end
 
 -- -------- guild readiness grace --------
 local lastGuildTouch = 0
+local lastRosterRequest = 0
 local function MarkGuildTouched() lastGuildTouch = GetTime() end
+
+local function PollGuildRoster()
+  if C_GuildInfo and C_GuildInfo.GuildRoster then
+    C_GuildInfo.GuildRoster()
+  else
+    GuildRoster()
+  end
+  lastRosterRequest = GetTime()
+end
+
 local function GuildRouteReady()
   if not IsInGuild() then return false end
-  if not GetGuildInfo("player") then return false end
-  return (GetTime() - (lastGuildTouch or 0)) > 3
+  local guildName = GetGuildInfo("player")
+  if not guildName or guildName == "" then return false end
+
+  -- Allow immediate sends once we've seen a roster (including ones we triggered).
+  if lastGuildTouch == 0 then return true end
+
+  local now = GetTime()
+  if now - lastGuildTouch >= 0.5 then return true end
+
+  if lastRosterRequest > 0 and lastGuildTouch >= lastRosterRequest then
+    return true
+  end
+
+  return false
 end
 do
   local f = CreateFrame("Frame")
@@ -121,11 +144,7 @@ local function SendWhisperFallback(payload, maxPeers)
   maxPeers = maxPeers or 12
   if not IsInGuild() then return false end
 
-  if C_GuildInfo and C_GuildInfo.GuildRoster then
-    C_GuildInfo.GuildRoster()
-  else
-    GuildRoster()
-  end
+  PollGuildRoster()
 
   local count = GetNumGuildMembers() or 0
   if count == 0 then return false end
@@ -207,7 +226,7 @@ end
 
 local function SendDirectToOtherOnline(payload)
   if not IsInGuild() then return false end
-  if C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() else GuildRoster() end
+  PollGuildRoster()
   local n, me = GetNumGuildMembers() or 0, UnitName("player")
   local others = {}
   for i=1,n do
