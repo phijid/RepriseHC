@@ -140,10 +140,11 @@ local function Broadcast(tag, payload)
     local pts = tonumber(ptsStr or "0") or 0
     RepriseHC.Comm_Send("ACH", { playerKey=playerKey, id=id, pts=pts, name=name })
   elseif tag == "DEAD" then
-    local playerKey, levelStr, class, race, zone, subzone, name = payload:match("^([^;]*);([^;]*);([^;]*);([^;]*);([^;]*);([^;]*);?(.*)$")
+    local playerKey, levelStr, class, race, zone, subzone, name, whenStr = payload:match("^([^;]*);([^;]*);([^;]*);([^;]*);([^;]*);([^;]*);([^;]*);?(.*)$")
     if not playerKey then return end
     local level = tonumber(levelStr or "0") or 0
-    RepriseHC.Comm_Send("DEATH", { playerKey=playerKey, level=level, class=class, race=race, zone=zone, subzone=subzone, name=name })
+    local when = tonumber(whenStr) or time()
+    RepriseHC.Comm_Send("DEATH", { playerKey=playerKey, level=level, class=class, race=race, zone=zone, subzone=subzone, name=name, when=when })
   end
 end
 
@@ -152,8 +153,9 @@ local function SyncBroadcastAward(id, name, pts)
 end
 
 function RepriseHC.SyncBroadcastDeath(level, class, race, zone, subzone, name)
-  Broadcast("DEAD", string.format("%s;%d;%s;%s;%s;%s;%s",
-    PlayerKey(), level or 0, class or "", race or "", zone or "", subzone or "", name or ""))
+  local whenStr = tostring(time())
+  Broadcast("DEAD", string.format("%s;%d;%s;%s;%s;%s;%s;%s",
+    PlayerKey(), level or 0, class or "", race or "", zone or "", subzone or "", name or "", whenStr))
 end
 
 -- ========= Level/Professions =========
@@ -444,7 +446,7 @@ function RepriseHC.Ach_TryGuildFirsts()
   if LockGuildFirst(idr, pkey, pname) then
     local title = "Guild First " .. RepriseHC.levelCap .. " " .. (raceDisp or "Race")
     if EarnAchievement(idr, title, 100) then
-      local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First " .. RepriseHC.levelCap .. " " .. (raceDisp or "Class"), 100)
+      local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First " .. RepriseHC.levelCap .. " " .. (raceDisp or "Race"), 100)
       Print(msg)
       if (RepriseHC.GetShowToGuild()) then
         SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD", GetDefaultLanguage("player"))
@@ -478,13 +480,23 @@ function CaptureDeath()
 
   local pkey = (RepriseHC and RepriseHC.PlayerKey and RepriseHC.PlayerKey()) or name
 
-  -- de-dupe insert
+  -- de-dupe insert with normalized comparison
   local inserted = false
   local log = RepriseHC.GetDeathLog and RepriseHC.GetDeathLog() or nil
+  
+  local function normalizeForCompare(key)
+    return (key or ""):lower():gsub("%-.*$", "")
+  end
+  
   if log then
+    local myNorm = normalizeForCompare(pkey)
     for _, d in ipairs(log) do
-      if d.playerKey == pkey then return end
+      if normalizeForCompare(d.playerKey) == myNorm then 
+        return  -- Already logged, don't duplicate
+      end
     end
+    
+    local deathTime = time()
     table.insert(log, {
       playerKey = pkey,
       name      = name,
@@ -493,19 +505,12 @@ function CaptureDeath()
       race      = erace,
       zone      = zone,
       subzone   = sub,
-      when      = time(),
+      when      = deathTime,
     })
     inserted = true
   end
 
-  -- one-time guild echo from the dying client (no spam from receivers)
-  if inserted and IsInGuild() and RepriseHC.GetShowToGuild and RepriseHC.GetShowToGuild() then
-    local where = zone ~= "" and zone or "Unknown"
-    if sub and sub ~= "" then where = where .. " - " .. sub end
-    local lvl = tonumber(level or 0) or 0
-    local msg = string.format("%s has died (lvl %d) in %s.", name or "Unknown", lvl, where)
-    SendChatMessage(msg, "GUILD")
-  end
+  if not inserted then return end
 
   local function send()
     if RepriseHC and RepriseHC.SyncBroadcastDeath then
@@ -513,17 +518,18 @@ function CaptureDeath()
     elseif RepriseHC and RepriseHC.Comm_Send then
       RepriseHC.Comm_Send("DEATH", {
         playerKey = pkey, name = name, level = level, class = eclass, race = erace,
-        zone = zone, subzone = sub,
+        zone = zone, subzone = sub, when = time()
       })
     end
   end
 
-  -- small delay + robust retries to tolerate guild/roster flaps
+  -- Immediate send plus robust retries
+  send()
   C_Timer.After(1.0,   send)
   C_Timer.After(6.0,   send)
   C_Timer.After(15.0,  send)
-  C_Timer.After(30.0,  send)   -- new
-  C_Timer.After(60.0,  send)   -- new
+  C_Timer.After(30.0,  send)
+  C_Timer.After(60.0,  send)
 end
 
 

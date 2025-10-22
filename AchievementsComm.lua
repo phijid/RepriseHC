@@ -57,11 +57,12 @@ local function TryDecodeLegacy(payload)
     return { v=1, t="ACH", q=0, s="LEGACY",
       p={ playerKey=playerKey, id=id, pts=tonumber(ptsStr or "0") or 0, name=displayName } }
   elseif tag == "DEAD" then
-    local playerKey, levelStr, class, race, zone, subzone, name =
-      rest:match("^([^;]*);([^;]*);([^;]*);([^;]*);([^;]*);([^;]*);?(.*)$")
+    local playerKey, levelStr, class, race, zone, subzone, name, whenStr =
+      rest:match("^([^;]*);([^;]*);([^;]*);([^;]*);([^;]*);([^;]*);([^;]*);?(.*)$")
     if not playerKey then return end
+    local when = tonumber(whenStr) or time()
     return { v=1, t="DEATH", q=0, s="LEGACY",
-      p={ playerKey=playerKey, level=tonumber(levelStr or "0") or 0, class=class, race=race, zone=zone, subzone=subzone, name=name } }
+      p={ playerKey=playerKey, level=tonumber(levelStr or "0") or 0, class=class, race=race, zone=zone, subzone=subzone, name=name, when=when } }
   end
 end
 
@@ -248,11 +249,26 @@ local function MergeSnapshot(p)
   for id,entry in pairs(p.guildFirsts or {}) do
     if not db.guildFirsts[id] then db.guildFirsts[id] = entry end
   end
+  
+  -- Improved death log merging with normalized comparison
   local seen = {}
-  for _,d in ipairs(db.deathLog) do if d.playerKey then seen[d.playerKey]=true end end
+  local function normalizeForCompare(key)
+    return (key or ""):lower():gsub("%-.*$", "")
+  end
+  
+  for _,d in ipairs(db.deathLog) do 
+    if d.playerKey then 
+      seen[normalizeForCompare(d.playerKey)] = true 
+    end 
+  end
+  
   for _,d in ipairs(p.deathLog or {}) do
-    if d.playerKey and not seen[d.playerKey] then
-      table.insert(db.deathLog, d); seen[d.playerKey]=true
+    if d.playerKey then
+      local norm = normalizeForCompare(d.playerKey)
+      if not seen[norm] then
+        table.insert(db.deathLog, d)
+        seen[norm] = true
+      end
     end
   end
 end
@@ -329,10 +345,20 @@ local function HandleIncoming(prefix, payload, channel, sender)
   elseif topic == "DEATH" then
     normalizeKeyAndName(p, sender)
 
+    -- Check for duplicates using normalized comparison
     local seen = false
-    for _, d in ipairs(RepriseHC.GetDeathLog()) do
-      if d.playerKey == p.playerKey then seen = true; break end
+    local function normalizeForCompare(key)
+      return (key or ""):lower():gsub("%-.*$", "")
     end
+    local incomingNorm = normalizeForCompare(p.playerKey)
+    
+    for _, d in ipairs(RepriseHC.GetDeathLog()) do
+      if normalizeForCompare(d.playerKey) == incomingNorm then 
+        seen = true
+        break 
+      end
+    end
+    
     if seen then
       if RHC_DEBUG then print("|cff99ccff[RHC]|r DEATH already logged for", p.playerKey, "— skipping") end
       return
@@ -340,21 +366,34 @@ local function HandleIncoming(prefix, payload, channel, sender)
 
     table.insert(RepriseHC.GetDeathLog(), {
       playerKey=p.playerKey, name=p.name, level=p.level, class=p.class, race=p.race,
-      zone=p.zone, subzone=p.subzone, when=time()
+      zone=p.zone, subzone=p.subzone, when=p.when or time()
     })
+    
     if RHC_DEBUG then print("|cff99ccff[RHC]|r DEATH inserted for", p.playerKey) end
+    
+    -- Guild announcement for received deaths (not our own)
+    if IsInGuild() and RepriseHC.GetShowToGuild and RepriseHC.GetShowToGuild() then
+      local myKey = RepriseHC.PlayerKey and RepriseHC.PlayerKey() or UnitName("player")
+      if normalizeForCompare(p.playerKey) ~= normalizeForCompare(myKey) then
+        local where = (p.zone or "Unknown")
+        if p.subzone and p.subzone ~= "" then where = where .. " - " .. p.subzone end
+        local msg = string.format("%s has died (lvl %d) in %s.", p.name or p.playerKey or "Unknown", p.level or 0, where)
+        SendChatMessage(msg, "GUILD")
+      end
+    end
+    
     if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
 
-    elseif topic == "REQSNAP" then
-      RepriseHC.Comm_Send("SNAP", { kind="SNAP", data=BuildSnapshot() })
+  elseif topic == "REQSNAP" then
+    RepriseHC.Comm_Send("SNAP", { kind="SNAP", data=BuildSnapshot() })
 
-    elseif topic == "SNAP" and p and p.data then
-      MergeSnapshot(p.data)
-      haveSnapshot = true
-      if RepriseHC.Print then RepriseHC.Print("Synchronized snapshot.") end
-      if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
-    end
+  elseif topic == "SNAP" and p and p.data then
+    MergeSnapshot(p.data)
+    haveSnapshot = true
+    if RepriseHC.Print then RepriseHC.Print("Synchronized snapshot.") end
+    if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
   end
+end
 
 -- Expose for any external calls (and unit tests)
 RepriseHC.Comm_OnAddonMessage = HandleIncoming
@@ -375,18 +414,6 @@ function RepriseHC.Comm_Send(topic, payloadTable)
     usedGroup = SendViaGroup(wire)
   end
 
-  -- if topic == "DEATH" then
-  --   -- immediate direct whisper(s)
-  --   SendWhisperFallback(wire, 12)
-
-  --   -- late safety resend (kept)
-  --   local late = wire
-  --   C_Timer.After(25, function()
-  --     local ok = SendViaGuild(late)
-  --     if not ok then ok = SendViaGroup(late) end
-  --     SendWhisperFallback(late, 12)
-  --   end)
-  -- end
   if topic == "DEATH" then
     -- Try the direct 1:1 path first (when only 2 online)
     local didDirect = SendDirectToOtherOnline(wire)
