@@ -5,6 +5,7 @@
 local PREFIX = "RepriseHC_ACH"
 local RHC_DEBUG = true  -- set true to print who we whisper
 local lastOwnDeathAnnounceAt = 0
+local lastResetStamp
 
 local function debugPrint(...)
   if RHC_DEBUG and print then print("|cff99ccff[RHC]|r", ...) end
@@ -431,6 +432,9 @@ local function MergeSnapshot(p)
         stagedByNorm[norm] = entry
       end
     end
+    if match then
+      appendEntry(match)
+    end
   end
 
   if #staged == 0 then return end
@@ -645,6 +649,54 @@ local function HandleIncoming(prefix, payload, channel, sender)
       SendChatMessage(msg, "GUILD")
     end
 
+    if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
+
+  elseif topic == "RESET" then
+    local sig = tonumber(p.sig)
+    local expected = RepriseHC._ResetSignature
+    if not sig or not expected or sig ~= expected then
+      if RHC_DEBUG then
+        print("|cffff6666[RHC]|r reset ignored (bad signature)")
+      end
+      return
+    end
+
+    local stamp = tonumber(p.stamp) or 0
+    if stamp ~= 0 then
+      if RepriseHC._LastResetStamp and stamp == RepriseHC._LastResetStamp then
+        if RHC_DEBUG then print("|cff99ccff[RHC]|r reset echo ignored") end
+        return
+      end
+      if lastResetStamp and stamp == lastResetStamp then
+        return
+      end
+      lastResetStamp = stamp
+    else
+      lastResetStamp = time()
+    end
+
+    RepriseHC._LastResetStamp = lastResetStamp
+
+    local origin = p.source
+    if type(origin) ~= "string" or origin == "" then
+      origin = sender or ""
+    end
+    if type(origin) == "string" and origin ~= "" then
+      origin = origin:gsub("-.*$", "")
+    else
+      origin = nil
+    end
+
+    local reason = "|cffff6060Global reset applied.|r"
+    if origin then
+      reason = ("|cffff6060Global reset applied by %s.|r"):format(origin)
+    end
+
+    if RepriseHC._HardResetDB then
+      RepriseHC._HardResetDB(reason)
+    end
+
+    haveSnapshot = false
     if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
 
   elseif topic == "REQSNAP" then

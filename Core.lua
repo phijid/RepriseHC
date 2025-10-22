@@ -102,6 +102,35 @@ function RepriseHC.Print(msg)
   DEFAULT_CHAT_FRAME:AddMessage("|cff00c0ffRepriseHC:|r " .. (msg or ""))
 end
 
+local RESET_SALT = "RepriseHC_ResetSalt_v1"
+local RESET_HASH_BASE = 131
+local RESET_HASH_MOD  = 2147483647 -- 2^31-1 (fits safely in Lua double precision)
+local RESET_SIGNATURE = 1740334091 -- Hash for salt + Subarashii#11931
+
+RepriseHC._ResetSignature = RESET_SIGNATURE
+
+local function ComputeBattleTagHash(tag)
+  if not tag or tag == "" then return nil end
+  local acc = 0
+  local source = RESET_SALT .. "::" .. tag
+  for i = 1, #source do
+    acc = (acc * RESET_HASH_BASE + source:byte(i)) % RESET_HASH_MOD
+  end
+  return acc
+end
+
+local function GetPlayerBattleTag()
+  if not BNGetInfo then return nil end
+  local a, b = BNGetInfo()
+  if type(b) == "string" and b ~= "" then
+    return b
+  end
+  if type(a) == "string" and a:find("#", 1, true) then
+    return a
+  end
+  return nil
+end
+
 function RepriseHC.GetPlayerKey()
   local name, realm = UnitName("player")
   realm = realm or GetRealmName()
@@ -175,7 +204,7 @@ function RepriseHC.PushDeath(entry)
 end
 
 -- Hard reset helper (secret)
-local function HardResetDB()
+local function HardResetDB(reason)
   if not RepriseHCAchievementsDB then return end
   -- wipe all character points & achievements + guild firsts
   RepriseHCAchievementsDB.characters = {}
@@ -183,7 +212,11 @@ local function HardResetDB()
   RepriseHCAchievementsDB.deathLog = {}
   RepriseHCAchievementsDB.groupAssignments = {}
 
-  RepriseHC.Print("|cffff6060Cleaned!|r")
+  local msg = "|cffff6060Cleaned!|r"
+  if type(reason) == "string" and reason ~= "" then
+    msg = reason
+  end
+  RepriseHC.Print(msg)
 
   C_Timer.After(0, function()
     if RepriseHC_UI and RepriseHC_UI:IsShown() then
@@ -191,6 +224,37 @@ local function HardResetDB()
     end
   end)
 
+end
+
+RepriseHC._HardResetDB = HardResetDB
+
+function RepriseHC.CanRunGlobalReset()
+  local battleTag = GetPlayerBattleTag()
+  if not battleTag then
+    return false, nil, "|cffff6060Reset requires a Battle.net login.|r"
+  end
+  local hash = ComputeBattleTagHash(battleTag)
+  if not hash then
+    return false, nil, "|cffff6060Unable to validate Battle.net identity.|r"
+  end
+  if hash ~= RESET_SIGNATURE then
+    return false, nil, "|cffff6060Reset not permitted for this account.|r"
+  end
+  return true, hash
+end
+
+function RepriseHC.TriggerGlobalReset(signature)
+  if type(signature) ~= "number" or signature ~= RESET_SIGNATURE then return end
+
+  local stamp = GetServerTime and GetServerTime() or time()
+  RepriseHC._LastResetStamp = stamp
+
+  HardResetDB("|cffff6060Global reset requested.|r")
+
+  if RepriseHC.Comm_Send then
+    local origin = RepriseHC.GetPlayerKey and RepriseHC.GetPlayerKey() or UnitName("player") or ""
+    RepriseHC.Comm_Send("RESET", { sig = signature, stamp = stamp, source = origin })
+  end
 end
 
 function RepriseHC.DB() return RepriseHCAchievementsDB end
@@ -283,7 +347,12 @@ SlashCmdList["REPRISEHC"] = function(msg)
     if RepriseHC.RebuildGuildCache then RepriseHC.RebuildGuildCache() end
     RepriseHC.Print("Guild roster refreshed.")
   elseif lower:match("^reset%s+all$") then
-    HardResetDB()
+    local ok, signature, err = RepriseHC.CanRunGlobalReset()
+    if not ok then
+      if err then RepriseHC.Print(err) end
+      return
+    end
+    RepriseHC.TriggerGlobalReset(signature)
   else
     RepriseHC.Print("Commands: /rhc on, /rhc off, /rhc reload, |cffa0a0a0/rhc reset all|r (SECRET)")
   end
