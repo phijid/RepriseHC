@@ -5,6 +5,7 @@
 local PREFIX = "RepriseHC_ACH"
 local RHC_DEBUG = true  -- set true to print who we whisper
 local suppressGuildAnnouncementsUntil = 0
+local lastOwnDeathAnnounceAt = 0
 
 local function debugPrint(...)
   if RHC_DEBUG and print then print("|cff99ccff[RHC]|r", ...) end
@@ -17,10 +18,6 @@ local function SuppressGuildAnnouncements(seconds)
   if untilTime > suppressGuildAnnouncementsUntil then
     suppressGuildAnnouncementsUntil = untilTime
   end
-end
-
-local function debugPrint(...)
-  if RHC_DEBUG and print then print("|cff99ccff[RHC]|r", ...) end
 end
 
 if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
@@ -383,9 +380,15 @@ local function MergeSnapshot(p)
     else
       when = time()
     end
+    local pk = src.playerKey or src.player or src.name
+    if not pk or pk == "" then return nil end
+    local nm = src.name
+    if (not nm or nm == "") and type(pk) == "string" then
+      nm = pk:match("^([^%-]+)") or pk
+    end
     return {
-      playerKey = src.playerKey,
-      name      = src.name,
+      playerKey = pk,
+      name      = nm,
       level     = src.level,
       class     = src.class,
       race      = src.race,
@@ -411,30 +414,26 @@ local function MergeSnapshot(p)
   local currentCount = #db.deathLog
   if currentCount == 0 then
     for _,d in ipairs(incoming) do
-      if d.playerKey and d.playerKey ~= "" then
-        local entry = cloneDeathEntry(d)
-        if entry then table.insert(db.deathLog, entry) end
-      end
+      local entry = cloneDeathEntry(d)
+      if entry then table.insert(db.deathLog, entry) end
     end
     return
   end
 
   local seen = {}
   for _,d in ipairs(db.deathLog) do
-    if d.playerKey then
-      seen[normalizeForCompare(d.playerKey)] = true
+    if d.playerKey or d.name then
+      seen[normalizeForCompare(d.playerKey or d.name)] = true
     end
   end
 
   for _,d in ipairs(incoming) do
-    if d.playerKey and d.playerKey ~= "" then
-      local norm = normalizeForCompare(d.playerKey)
-      if not seen[norm] then
-        local entry = cloneDeathEntry(d)
-        if entry then
-          table.insert(db.deathLog, entry)
-          seen[norm] = true
-        end
+    local entry = cloneDeathEntry(d)
+    if entry then
+      local norm = normalizeForCompare(entry.playerKey)
+      if norm ~= "" and not seen[norm] then
+        table.insert(db.deathLog, entry)
+        seen[norm] = true
       end
     end
   end
@@ -517,12 +516,12 @@ local function HandleIncoming(prefix, payload, channel, sender)
     local function normalizeForCompare(key)
       return (key or ""):lower():gsub("%-.*$", "")
     end
-    local incomingNorm = normalizeForCompare(p.playerKey)
-    
+    local incomingNorm = normalizeForCompare(p.playerKey or p.name)
+
     for _, d in ipairs(RepriseHC.GetDeathLog()) do
-      if normalizeForCompare(d.playerKey) == incomingNorm then 
+      if normalizeForCompare(d.playerKey or d.name) == incomingNorm then
         seen = true
-        break 
+        break
       end
     end
     
@@ -534,23 +533,26 @@ local function HandleIncoming(prefix, payload, channel, sender)
     local eventWhen = tonumber(p.when) or tonumber(p.time) or time()
     eventWhen = eventWhen > 0 and math.floor(eventWhen) or time()
     table.insert(RepriseHC.GetDeathLog(), {
-      playerKey=p.playerKey, name=p.name, level=p.level, class=p.class, race=p.race,
+      playerKey=p.playerKey or p.name, name=p.name, level=p.level, class=p.class, race=p.race,
       zone=p.zone, subzone=p.subzone, when=eventWhen
     })
 
-    if RHC_DEBUG then print("|cff99ccff[RHC]|r DEATH inserted for", p.playerKey) end
+    if RHC_DEBUG then print("|cff99ccff[RHC]|r DEATH inserted for", p.playerKey or p.name or "?") end
 
-    -- Guild announcement for received deaths (not our own)
+    -- Guild announcement for our own death (skip others)
     local announceToGuild = false
     if IsInGuild() and RepriseHC.GetShowToGuild and RepriseHC.GetShowToGuild() then
       local myKey = RepriseHC.PlayerKey and RepriseHC.PlayerKey() or UnitName("player")
-      if normalizeForCompare(p.playerKey) ~= normalizeForCompare(myKey) then
+      local myNorm = normalizeForCompare(myKey)
+      if incomingNorm ~= "" and incomingNorm == myNorm then
         local now = time()
         local age = now - (eventWhen or now)
         if age < 0 then age = 0 end
-        local suppressed = (GetTime() < suppressGuildAnnouncementsUntil) and (channel ~= "GUILD") and (age > 5)
-        if not suppressed and age < 120 then
+        local suppressed = (GetTime() < suppressGuildAnnouncementsUntil)
+        local recentlyAnnounced = (now - lastOwnDeathAnnounceAt) < 60
+        if not suppressed and age < 120 and not recentlyAnnounced then
           announceToGuild = true
+          lastOwnDeathAnnounceAt = now
         end
       end
     end
