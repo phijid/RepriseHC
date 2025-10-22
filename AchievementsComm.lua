@@ -19,6 +19,10 @@ local function SuppressGuildAnnouncements(seconds)
   end
 end
 
+local function debugPrint(...)
+  if RHC_DEBUG and print then print("|cff99ccff[RHC]|r", ...) end
+end
+
 if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
   C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
 end
