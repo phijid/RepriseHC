@@ -491,11 +491,11 @@ function CaptureDeath()
   if log then
     local myNorm = normalizeForCompare(pkey)
     for _, d in ipairs(log) do
-      if normalizeForCompare(d.playerKey) == myNorm then 
+      if normalizeForCompare(d.playerKey) == myNorm then
         return  -- Already logged, don't duplicate
       end
     end
-    
+
     local deathTime = time()
     table.insert(log, {
       playerKey = pkey,
@@ -508,6 +508,18 @@ function CaptureDeath()
       when      = deathTime,
     })
     inserted = true
+
+    if inserted and IsInGuild() and RepriseHC.GetShowToGuild and RepriseHC.GetShowToGuild() then
+      local where = zone or "Unknown"
+      if sub and sub ~= "" then
+        where = where .. " - " .. sub
+      end
+      local msg = string.format("%s has died (lvl %d) in %s.", name or pkey or "Unknown", level or 0, where)
+      SendChatMessage(msg, "GUILD")
+      if RepriseHC.Comm_MarkOwnDeathAnnounced then
+        RepriseHC.Comm_MarkOwnDeathAnnounced(deathTime)
+      end
+    end
   end
 
   if not inserted then return end

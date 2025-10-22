@@ -405,6 +405,15 @@ local function MergeSnapshot(p)
     return key:lower():gsub("%-.*$", "")
   end
 
+  local function fallbackKey(entry)
+    if not entry then return nil end
+    local name = entry.name or entry.playerKey
+    local when = tonumber(entry.when) or 0
+    if (not name or name == "") and when == 0 then return nil end
+    name = (name or ""):lower()
+    return string.format("%s#%d", name, when)
+  end
+
   local staged = {}
   for _, raw in pairs(incoming) do
     local entry = cloneDeathEntry(raw)
@@ -424,11 +433,15 @@ local function MergeSnapshot(p)
     return
   end
 
-  local seen = {}
+  local seen, seenFallback = {}, {}
   for _, existing in ipairs(db.deathLog) do
     local norm = normalizeEntryKey(existing)
     if norm ~= "" and not seen[norm] then
       seen[norm] = existing
+    end
+    local fb = fallbackKey(existing)
+    if fb and not seenFallback[fb] then
+      seenFallback[fb] = existing
     end
   end
 
@@ -445,6 +458,21 @@ local function MergeSnapshot(p)
       else
         table.insert(db.deathLog, entry)
         seen[norm] = entry
+      end
+    else
+      local fb = fallbackKey(entry)
+      local dest = fb and seenFallback[fb] or nil
+      if dest then
+        for k, v in pairs(entry) do
+          if v ~= nil and v ~= "" then
+            dest[k] = v
+          end
+        end
+      else
+        table.insert(db.deathLog, entry)
+        if fb then
+          seenFallback[fb] = entry
+        end
       end
     end
   end
@@ -633,6 +661,15 @@ function RepriseHC.Comm_Send(topic, payloadTable)
     -- Short-delay snapshots heal any missed packets once the channel settles
     C_Timer.After(5,  SendSmallSnapshot)
     C_Timer.After(20, SendSmallSnapshot)
+  end
+end
+
+function RepriseHC.Comm_MarkOwnDeathAnnounced(when)
+  local stamp = tonumber(when) or time()
+  if stamp and stamp > 0 then
+    lastOwnDeathAnnounceAt = stamp
+  else
+    lastOwnDeathAnnounceAt = time()
   end
 end
 
