@@ -504,7 +504,7 @@ function CaptureDeath()
     if sub and sub ~= "" then where = where .. " - " .. sub end
     local lvl = tonumber(level or 0) or 0
     local msg = string.format("%s has died (lvl %d) in %s.", name or "Unknown", lvl, where)
-    SendChatMessage(msg, "GUILD", GetDefaultLanguage("player"))
+    SendChatMessage(msg, "GUILD")
   end
 
   local function send()

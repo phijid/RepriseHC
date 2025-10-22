@@ -204,6 +204,36 @@ local function SendSmallSnapshot()
   RepriseHC.Comm_Send("SNAP", { kind="SNAP", data=BuildSnapshot() })
 end
 
+local function SendDirectToOtherOnline(payload)
+  if not IsInGuild() then return false end
+  if C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() else GuildRoster() end
+  local n, me = GetNumGuildMembers() or 0, UnitName("player")
+  local others = {}
+  for i=1,n do
+    local name, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
+    if online and name then
+      local short = Ambiguate(name, "short")
+      if not UnitIsUnit(short, "player") and not UnitIsUnit(name, "player") then
+        table.insert(others, name)
+      end
+    end
+  end
+  if #others ~= 1 then return false end
+  local other = others[1]
+  local full  = Ambiguate(other, "none")   -- Name-Realm
+  local short = Ambiguate(other, "short")  -- Name
+  -- AceComm
+  AceComm:SendCommMessage(PREFIX, payload, "WHISPER", full)
+  AceComm:SendCommMessage(PREFIX, payload, "WHISPER", short)
+  -- Raw API too (belt + suspenders)
+  if C_ChatInfo and C_ChatInfo.SendAddonMessage then
+    C_ChatInfo.SendAddonMessage(PREFIX, payload, "WHISPER", full)
+    C_ChatInfo.SendAddonMessage(PREFIX, payload, "WHISPER", short)
+  end
+  if RHC_DEBUG then print("|cff99ccff[RHC]|r DEATH direct->", full, "/", short) end
+  return true
+end
+
 local function MergeSnapshot(p)
   if type(p) ~= "table" then return end
   local db = RepriseHC.DB()
@@ -357,11 +387,14 @@ function RepriseHC.Comm_Send(topic, payloadTable)
   --     SendWhisperFallback(late, 12)
   --   end)
   -- end
-    if topic == "DEATH" then
-    -- existing immediate fan-out:
+  if topic == "DEATH" then
+    -- Try the direct 1:1 path first (when only 2 online)
+    local didDirect = SendDirectToOtherOnline(wire)
+
+    -- Also do the regular fan-out (covers >2 online)
     SendWhisperFallback(wire, 12)
 
-    -- late safety resend (you already have this; keep it)
+    -- Late resend for good measure
     local late = wire
     C_Timer.After(25, function()
       local ok = SendViaGuild(late)
@@ -369,7 +402,7 @@ function RepriseHC.Comm_Send(topic, payloadTable)
       SendWhisperFallback(late, 12)
     end)
 
-    -- NEW: push a tiny structured SNAP after the channel settles
+    -- Short-delay snapshots heal any missed packets once the channel settles
     C_Timer.After(5,  SendSmallSnapshot)
     C_Timer.After(20, SendSmallSnapshot)
   end
