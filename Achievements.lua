@@ -170,7 +170,7 @@ function RepriseHC.Ach_AwardLevelsUpTo(level)
         local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format(nm, pts)
         Print(msg)
         if (RepriseHC.GetShowToGuild()) then
-          SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD", GetDefaultLanguage("player"))
+          SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
         end
         SyncBroadcastAward(id, nm, pts)
       end
@@ -202,7 +202,7 @@ function RepriseHC.Ach_CheckProfessions()
           local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format(nm, pts)
           Print(msg)
           if (RepriseHC.GetShowToGuild()) then
-            SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD", GetDefaultLanguage("player"))
+            SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
           end
           SyncBroadcastAward(id, nm, pts)
         end
@@ -239,7 +239,7 @@ local function AwardSpeedrunIfEligible(totalSeconds)
         local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format(nm, pts)
         Print(msg)
         if (RepriseHC.GetShowToGuild()) then
-          SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD", GetDefaultLanguage("player"))
+          SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
         end
         SyncBroadcastAward(id, nm, pts)
       end
@@ -351,7 +351,7 @@ function RepriseHC.Ach_CheckQuest(questID)
           local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format(nm, pts)
           Print(msg)
           if (RepriseHC.GetShowToGuild()) then
-            SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD", GetDefaultLanguage("player"))
+            SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
           end
           SyncBroadcastAward(id, nm, pts)
         end
@@ -413,7 +413,7 @@ function RepriseHC.Ach_TryGuildFirsts()
       local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First " .. RepriseHC.levelCap, 200)
       Print(msg)
       if (RepriseHC.GetShowToGuild()) then
-        SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD", GetDefaultLanguage("player"))
+        SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
       end
       SyncBroadcastAward("FIRST_" .. RepriseHC.levelCap, "Guild First " .. RepriseHC.levelCap, 200)
     end
@@ -431,7 +431,7 @@ function RepriseHC.Ach_TryGuildFirsts()
       local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First " .. RepriseHC.levelCap .. " " .. (classDisp or "Class"), 100)
       Print(msg)
       if (RepriseHC.GetShowToGuild()) then
-        SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD", GetDefaultLanguage("player"))
+        SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
       end
       SyncBroadcastAward(idc, title, 100)
     end
@@ -449,7 +449,7 @@ function RepriseHC.Ach_TryGuildFirsts()
       local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First " .. RepriseHC.levelCap .. " " .. (raceDisp or "Race"), 100)
       Print(msg)
       if (RepriseHC.GetShowToGuild()) then
-        SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD", GetDefaultLanguage("player"))
+        SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
       end
       SyncBroadcastAward(idr, title, 100)
     end
@@ -491,11 +491,11 @@ function CaptureDeath()
   if log then
     local myNorm = normalizeForCompare(pkey)
     for _, d in ipairs(log) do
-      if normalizeForCompare(d.playerKey) == myNorm then 
+      if normalizeForCompare(d.playerKey) == myNorm then
         return  -- Already logged, don't duplicate
       end
     end
-    
+
     local deathTime = time()
     table.insert(log, {
       playerKey = pkey,
@@ -508,6 +508,18 @@ function CaptureDeath()
       when      = deathTime,
     })
     inserted = true
+
+    if inserted and IsInGuild() and RepriseHC.GetShowToGuild and RepriseHC.GetShowToGuild() then
+      local where = zone or "Unknown"
+      if sub and sub ~= "" then
+        where = where .. " - " .. sub
+      end
+      local msg = string.format("%s has died (lvl %d) in %s.", name or pkey or "Unknown", level or 0, where)
+      SendChatMessage(msg, "GUILD")
+      if RepriseHC.Comm_MarkOwnDeathAnnounced then
+        RepriseHC.Comm_MarkOwnDeathAnnounced(deathTime)
+      end
+    end
   end
 
   if not inserted then return end
@@ -583,7 +595,7 @@ local function OnCombatLogEvent()
     local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format(nm, pts)
     Print(msg)
     if (RepriseHC.GetShowToGuild()) then
-      SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD", GetDefaultLanguage("player"))
+      SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
     end
     SyncBroadcastAward(id, nm, pts)
   end
