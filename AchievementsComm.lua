@@ -477,6 +477,48 @@ local function MergeSnapshot(p)
     end
   end
 
+  -- Ensure our own death record is restored when peers still have it.
+  local myNormKey
+  if RepriseHC and RepriseHC.PlayerKey then
+    local selfKey = RepriseHC.PlayerKey()
+    if selfKey and selfKey ~= "" then
+      myNormKey = selfKey:lower():gsub("%-.*$", "")
+    end
+  end
+
+  if myNormKey and myNormKey ~= "" and not seen[myNormKey] then
+    local match
+    for _, entry in ipairs(staged) do
+      if normalizeEntryKey(entry) == myNormKey then
+        match = entry
+        break
+      end
+    end
+    if not match then
+      for _, entry in ipairs(staged) do
+        local fb = fallbackKey(entry)
+        if fb and not seenFallback[fb] then
+          local candidate = normalizeEntryKey(entry)
+          if candidate == "" then
+            local nm = (entry.name or entry.playerKey or ""):lower():gsub("%-.*$", "")
+            if nm == myNormKey then
+              match = entry
+              break
+            end
+          end
+        end
+      end
+    end
+    if match then
+      table.insert(db.deathLog, match)
+      seen[myNormKey] = match
+      local fb = fallbackKey(match)
+      if fb then
+        seenFallback[fb] = match
+      end
+    end
+  end
+
   table.sort(db.deathLog, function(a, b)
     return (a.when or 0) < (b.when or 0)
   end)
