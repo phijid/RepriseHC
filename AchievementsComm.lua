@@ -432,6 +432,9 @@ local function MergeSnapshot(p)
         stagedByNorm[norm] = entry
       end
     end
+    if match then
+      appendEntry(match)
+    end
   end
 
   if #staged == 0 then return end
