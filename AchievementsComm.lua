@@ -4,6 +4,12 @@
 
 local PREFIX = "RepriseHC_ACH"
 local RHC_DEBUG = true  -- set true to print who we whisper
+local lastOwnDeathAnnounceAt = 0
+local lastResetStamp
+
+local function debugPrint(...)
+  if RHC_DEBUG and print then print("|cff99ccff[RHC]|r", ...) end
+end
 
 if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
   C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
@@ -18,9 +24,54 @@ RepriseHC = RepriseHC or {}
 AceComm:Embed(RepriseHC)
 
 -- -------- identity / envelope / seq --------
+local selfName, selfRealm
+local function RefreshSelfIdentity()
+  local name, realm = UnitName("player")
+  if name and name ~= "" then
+    selfName = name
+  end
+  realm = realm or GetRealmName()
+  if realm and realm ~= "" then
+    selfRealm = realm
+  end
+end
+
+RefreshSelfIdentity()
+
 local function SelfId()
-  local name, realm = UnitName("player"); realm = realm or GetRealmName()
-  return (realm and realm ~= "" and (name.."-"..realm)) or name or "player"
+  if not selfName or selfName == "" then RefreshSelfIdentity() end
+  local name = selfName or "player"
+  local realm = selfRealm
+  if realm and realm ~= "" then
+    return name .. "-" .. realm
+  end
+  return name
+end
+
+local function SplitNameAndRealm(name)
+  if not name or name == "" then return nil end
+  local base, realm = name:match("^([^%-]+)%-(.*)$")
+  if base then
+    if realm == "" then realm = nil end
+    return base, realm
+  end
+  return name, nil
+end
+
+local function CanonicalShort(name)
+  local base = Ambiguate(name or "", "short")
+  return base and base:lower() or ""
+end
+
+local function FullName(name, realm)
+  if not name or name == "" then return nil end
+  if realm and realm ~= "" then
+    return name .. "-" .. realm
+  end
+  if selfRealm and selfRealm ~= "" then
+    return name .. "-" .. selfRealm
+  end
+  return name
 end
 
 local function Envelope(topic, payload)
@@ -68,19 +119,46 @@ end
 
 -- -------- guild readiness grace --------
 local lastGuildTouch = 0
+local lastRosterRequest = 0
 local function MarkGuildTouched() lastGuildTouch = GetTime() end
+
+local function PollGuildRoster()
+  if C_GuildInfo and C_GuildInfo.GuildRoster then
+    C_GuildInfo.GuildRoster()
+  else
+    GuildRoster()
+  end
+  lastRosterRequest = GetTime()
+end
+
 local function GuildRouteReady()
   if not IsInGuild() then return false end
-  if not GetGuildInfo("player") then return false end
-  return (GetTime() - (lastGuildTouch or 0)) > 3
+  local guildName = GetGuildInfo("player")
+  if not guildName or guildName == "" then return false end
+
+  -- Allow immediate sends once we've seen a roster (including ones we triggered).
+  if lastGuildTouch == 0 then return true end
+
+  local now = GetTime()
+  if now - lastGuildTouch >= 0.5 then return true end
+
+  if lastRosterRequest > 0 and lastGuildTouch >= lastRosterRequest then
+    return true
+  end
+
+  return false
 end
 do
   local f = CreateFrame("Frame")
+  f:RegisterEvent("PLAYER_LOGIN")
   f:RegisterEvent("PLAYER_ENTERING_WORLD")
   f:RegisterEvent("PLAYER_GUILD_UPDATE")
   f:RegisterEvent("GUILD_ROSTER_UPDATE")
   f:SetScript("OnEvent", function(_, ev)
-    if ev == "PLAYER_ENTERING_WORLD" or ev == "PLAYER_GUILD_UPDATE" or ev == "GUILD_ROSTER_UPDATE" then
+    if ev == "PLAYER_LOGIN" or ev == "PLAYER_ENTERING_WORLD" then
+      RefreshSelfIdentity()
+      MarkGuildTouched()
+    elseif ev == "PLAYER_GUILD_UPDATE" or ev == "GUILD_ROSTER_UPDATE" then
       MarkGuildTouched()
     end
   end)
@@ -105,27 +183,64 @@ end
 -- Whisper N online guildies (rotating) as reliability fan-out (dedupe on RX)
 local whisperIdx = 1
 
-local function IsSelf(fullname)
-  if not fullname or fullname == "" then return false end
-  local short = Ambiguate(fullname, "short")
-  return UnitIsUnit("player", short) or UnitIsUnit("player", fullname)
+local function IsSelf(name)
+  if not name or name == "" then return false end
+  if not selfName then RefreshSelfIdentity() end
+  local base, realm = SplitNameAndRealm(name)
+  if not base then return false end
+  realm = realm or selfRealm
+  if not realm or realm == "" then
+    realm = selfRealm
+  end
+  return (base == selfName) and ((realm or "") == (selfRealm or ""))
 end
 
+local function BuildWhisperTargets(name)
+  local targets, seen = {}, {}
+  local base, realm = SplitNameAndRealm(name)
+  if not base then return targets end
 
+  local function push(target)
+    if target and target ~= "" and not seen[target] then
+      table.insert(targets, target)
+      seen[target] = true
+    end
+  end
 
-local function debugPrint(...)
-  if RHC_DEBUG and print then print("|cff99ccff[RHC]|r", ...) end
+  if realm and realm ~= "" then
+    push(base .. "-" .. realm)
+  else
+    push(FullName(base, selfRealm))
+  end
+  push(base)
+
+  return targets
+end
+
+local function SendWhisperTargets(payload, name, debugLabel)
+  local sent = false
+  for _, target in ipairs(BuildWhisperTargets(name)) do
+    if not IsSelf(target) then
+      AceComm:SendCommMessage(PREFIX, payload, "WHISPER", target)
+      if C_ChatInfo and C_ChatInfo.SendAddonMessage then
+        C_ChatInfo.SendAddonMessage(PREFIX, payload, "WHISPER", target)
+      end
+      if debugLabel then
+        debugPrint(debugLabel, target)
+      else
+        debugPrint("fanout ->", target)
+      end
+      sent = true
+    end
+  end
+  return sent
 end
 
 local function SendWhisperFallback(payload, maxPeers)
   maxPeers = maxPeers or 12
   if not IsInGuild() then return false end
 
-  if C_GuildInfo and C_GuildInfo.GuildRoster then
-    C_GuildInfo.GuildRoster()
-  else
-    GuildRoster()
-  end
+  PollGuildRoster()
 
   local count = GetNumGuildMembers() or 0
   if count == 0 then return false end
@@ -138,15 +253,11 @@ local function SendWhisperFallback(payload, maxPeers)
   end
 
   if #onlineNames == 2 then
-    local other = IsSelf(onlineNames[1]) and onlineNames[2] or onlineNames[1]
+    local other = onlineNames[1]
+    if IsSelf(other) then other = onlineNames[2] end
     if other and not IsSelf(other) then
-      local full  = Ambiguate(other, "none")  -- "Name-Realm"
-      local short = Ambiguate(other, "short") -- "Name"
-      -- Send both forms (AceComm/SendAddonMessage handles dedupe on RX by content)
-      AceComm:SendCommMessage(PREFIX, payload, "WHISPER", full)
-      AceComm:SendCommMessage(PREFIX, payload, "WHISPER", short)
-      debugPrint("DEATH direct-whisper 2-online ->", full, "/", short)
-      return true
+      local sent = SendWhisperTargets(payload, other, "DEATH fallback->")
+      return sent
     end
   end
 
@@ -155,13 +266,16 @@ local function SendWhisperFallback(payload, maxPeers)
 
   local function trySendIndex(i)
     local name, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
-    if online and name and not IsSelf(name) and not seen[name] then
-      local target = Ambiguate(name, "none")
-      AceComm:SendCommMessage(PREFIX, payload, "WHISPER", target)
-      debugPrint("fanout ->", target)
-      seen[name] = true
-      sent = sent + 1
-      return true
+    if online and name then
+      local key = CanonicalShort(name)
+      if key ~= "" and not seen[key] and not IsSelf(name) then
+        local delivered = SendWhisperTargets(payload, name)
+        if delivered then
+          seen[key] = true
+          sent = sent + 1
+          return true
+        end
+      end
     end
     return false
   end
@@ -201,38 +315,45 @@ function BuildSnapshot()
   }
 end
 
-local function SendSmallSnapshot()
-  RepriseHC.Comm_Send("SNAP", { kind="SNAP", data=BuildSnapshot() })
-end
-
 local function SendDirectToOtherOnline(payload)
   if not IsInGuild() then return false end
-  if C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() else GuildRoster() end
-  local n, me = GetNumGuildMembers() or 0, UnitName("player")
-  local others = {}
+  PollGuildRoster()
+  local n = GetNumGuildMembers() or 0
+  local other
   for i=1,n do
     local name, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
-    if online and name then
-      local short = Ambiguate(name, "short")
-      if not UnitIsUnit(short, "player") and not UnitIsUnit(name, "player") then
-        table.insert(others, name)
+    if online and name and not IsSelf(name) then
+      if other then
+        return false  -- more than one other online
       end
+      other = name
     end
   end
-  if #others ~= 1 then return false end
-  local other = others[1]
-  local full  = Ambiguate(other, "none")   -- Name-Realm
-  local short = Ambiguate(other, "short")  -- Name
-  -- AceComm
-  AceComm:SendCommMessage(PREFIX, payload, "WHISPER", full)
-  AceComm:SendCommMessage(PREFIX, payload, "WHISPER", short)
-  -- Raw API too (belt + suspenders)
-  if C_ChatInfo and C_ChatInfo.SendAddonMessage then
-    C_ChatInfo.SendAddonMessage(PREFIX, payload, "WHISPER", full)
-    C_ChatInfo.SendAddonMessage(PREFIX, payload, "WHISPER", short)
+  if not other then return false end
+
+  local sent = SendWhisperTargets(payload, other, "DEATH direct->")
+  return sent
+end
+
+local function SendSnapshotPayload(payloadTable, target)
+  local wire = BuildWire("SNAP", payloadTable)
+  if not wire or wire == "" then return false end
+
+  local delivered = false
+  if target and target ~= "" then
+    delivered = SendWhisperTargets(wire, target, "SNAP ->")
   end
-  if RHC_DEBUG then print("|cff99ccff[RHC]|r DEATH direct->", full, "/", short) end
-  return true
+
+  if delivered then return true end
+
+  if SendViaGuild(wire) then return true end
+  if SendViaGroup(wire) then return true end
+
+  return SendWhisperFallback(wire, 6)
+end
+
+local function SendSmallSnapshot()
+  SendSnapshotPayload({ kind="SNAP", data=BuildSnapshot() })
 end
 
 local function MergeSnapshot(p)
@@ -242,6 +363,32 @@ local function MergeSnapshot(p)
   db.guildFirsts = db.guildFirsts or {}
   db.deathLog    = db.deathLog    or {}
 
+  local function cloneDeathEntry(src)
+    if type(src) ~= "table" then return nil end
+    local when = tonumber(src.when) or tonumber(src.time)
+    if when and when > 0 then
+      when = math.floor(when)
+    else
+      when = time()
+    end
+    local pk = src.playerKey or src.player or src.name
+    if not pk or pk == "" then return nil end
+    local nm = src.name
+    if (not nm or nm == "") and type(pk) == "string" then
+      nm = pk:match("^([^%-]+)") or pk
+    end
+    return {
+      playerKey = pk,
+      name      = nm,
+      level     = src.level,
+      class     = src.class,
+      race      = src.race,
+      zone      = src.zone,
+      subzone   = src.subzone,
+      when      = when,
+    }
+  end
+
   for k,v in pairs(p.characters or {}) do
     local lc = db.characters[k]
     if not lc or (v.points or 0) > (lc.points or 0) then db.characters[k] = v end
@@ -250,27 +397,129 @@ local function MergeSnapshot(p)
     if not db.guildFirsts[id] then db.guildFirsts[id] = entry end
   end
   
-  -- Improved death log merging with normalized comparison
-  local seen = {}
-  local function normalizeForCompare(key)
-    return (key or ""):lower():gsub("%-.*$", "")
+  local incoming = p.deathLog or {}
+  local function normalizeEntryKey(entry)
+    if not entry then return "" end
+    local key = entry.playerKey
+    if not key or key == "" then key = entry.name end
+    if not key or key == "" then return "" end
+    return key:lower():gsub("%-.*$", "")
   end
-  
-  for _,d in ipairs(db.deathLog) do 
-    if d.playerKey then 
-      seen[normalizeForCompare(d.playerKey)] = true 
-    end 
+
+  local function fallbackKey(entry)
+    if not entry then return nil end
+    local name = entry.name or entry.playerKey
+    local when = tonumber(entry.when) or 0
+    if (not name or name == "") and when == 0 then return nil end
+    name = (name or ""):lower()
+    return string.format("%s#%d", name, when)
   end
-  
-  for _,d in ipairs(p.deathLog or {}) do
-    if d.playerKey then
-      local norm = normalizeForCompare(d.playerKey)
-      if not seen[norm] then
-        table.insert(db.deathLog, d)
-        seen[norm] = true
+
+  local function shallowCopy(entry)
+    if type(entry) ~= "table" then return nil end
+    local copy = {}
+    for k, v in pairs(entry) do copy[k] = v end
+    return copy
+  end
+
+  local staged, stagedByNorm = {}, {}
+  for _, raw in pairs(incoming) do
+    local entry = cloneDeathEntry(raw)
+    if entry then
+      table.insert(staged, entry)
+      local norm = normalizeEntryKey(entry)
+      if norm ~= "" then
+        stagedByNorm[norm] = entry
       end
     end
   end
+
+  if #staged == 0 then return end
+
+  table.sort(staged, function(a, b)
+    return (a.when or 0) < (b.when or 0)
+  end)
+
+  local seen, seenFallback = {}, {}
+  local function markSeen(entry)
+    if not entry then return end
+    local norm = normalizeEntryKey(entry)
+    if norm ~= "" and not seen[norm] then
+      seen[norm] = entry
+    end
+    local fb = fallbackKey(entry)
+    if fb and not seenFallback[fb] then
+      seenFallback[fb] = entry
+    end
+  end
+
+  for _, existing in ipairs(db.deathLog) do
+    markSeen(existing)
+  end
+
+  local function appendEntry(entry)
+    local copy = shallowCopy(entry)
+    if not copy then return end
+    table.insert(db.deathLog, copy)
+    markSeen(copy)
+  end
+
+  for _, entry in ipairs(staged) do
+    local norm = normalizeEntryKey(entry)
+    if norm ~= "" then
+      local dest = seen[norm]
+      if dest then
+        for k, v in pairs(entry) do
+          if v ~= nil and v ~= "" then
+            dest[k] = v
+          end
+        end
+      else
+        appendEntry(entry)
+      end
+    else
+      local fb = fallbackKey(entry)
+      local dest = fb and seenFallback[fb] or nil
+      if dest then
+        for k, v in pairs(entry) do
+          if v ~= nil and v ~= "" then
+            dest[k] = v
+          end
+        end
+      else
+        appendEntry(entry)
+      end
+    end
+  end
+
+  -- Ensure our own death record is restored when peers still have it.
+  local myNormKey
+  if RepriseHC and RepriseHC.PlayerKey then
+    local selfKey = RepriseHC.PlayerKey()
+    if selfKey and selfKey ~= "" then
+      myNormKey = selfKey:lower():gsub("%-.*$", "")
+    end
+  end
+
+  if myNormKey and myNormKey ~= "" and not seen[myNormKey] then
+    local match = stagedByNorm[myNormKey]
+    if not match then
+      for _, entry in ipairs(staged) do
+        local nm = (entry.name or entry.playerKey or ""):lower():gsub("%-.*$", "")
+        if nm == myNormKey then
+          match = entry
+          break
+        end
+      end
+    end
+    if match then
+      appendEntry(match)
+    end
+  end
+
+  table.sort(db.deathLog, function(a, b)
+    return (a.when or 0) < (b.when or 0)
+  end)
 end
 
 -- -------- RX dedupe by sender sequence --------
@@ -350,12 +599,12 @@ local function HandleIncoming(prefix, payload, channel, sender)
     local function normalizeForCompare(key)
       return (key or ""):lower():gsub("%-.*$", "")
     end
-    local incomingNorm = normalizeForCompare(p.playerKey)
-    
+    local incomingNorm = normalizeForCompare(p.playerKey or p.name)
+
     for _, d in ipairs(RepriseHC.GetDeathLog()) do
-      if normalizeForCompare(d.playerKey) == incomingNorm then 
+      if normalizeForCompare(d.playerKey or d.name) == incomingNorm then
         seen = true
-        break 
+        break
       end
     end
     
@@ -364,28 +613,91 @@ local function HandleIncoming(prefix, payload, channel, sender)
       return
     end
 
+    local eventWhen = tonumber(p.when) or tonumber(p.time) or time()
+    eventWhen = eventWhen > 0 and math.floor(eventWhen) or time()
     table.insert(RepriseHC.GetDeathLog(), {
-      playerKey=p.playerKey, name=p.name, level=p.level, class=p.class, race=p.race,
-      zone=p.zone, subzone=p.subzone, when=p.when or time()
+      playerKey=p.playerKey or p.name, name=p.name, level=p.level, class=p.class, race=p.race,
+      zone=p.zone, subzone=p.subzone, when=eventWhen
     })
-    
-    if RHC_DEBUG then print("|cff99ccff[RHC]|r DEATH inserted for", p.playerKey) end
-    
-    -- Guild announcement for received deaths (not our own)
+
+    if RHC_DEBUG then print("|cff99ccff[RHC]|r DEATH inserted for", p.playerKey or p.name or "?") end
+
+    -- Guild announcement for our own death (skip others)
+    local announceToGuild = false
     if IsInGuild() and RepriseHC.GetShowToGuild and RepriseHC.GetShowToGuild() then
       local myKey = RepriseHC.PlayerKey and RepriseHC.PlayerKey() or UnitName("player")
-      if normalizeForCompare(p.playerKey) ~= normalizeForCompare(myKey) then
-        local where = (p.zone or "Unknown")
-        if p.subzone and p.subzone ~= "" then where = where .. " - " .. p.subzone end
-        local msg = string.format("%s has died (lvl %d) in %s.", p.name or p.playerKey or "Unknown", p.level or 0, where)
-        SendChatMessage(msg, "GUILD")
+      local myNorm = normalizeForCompare(myKey)
+      local isSelfSource = IsSelf(sender) or IsSelf(sid)
+      if incomingNorm ~= "" and incomingNorm == myNorm and isSelfSource then
+        local now = time()
+        local age = now - (eventWhen or now)
+        if age < 0 then age = 0 end
+        local recentlyAnnounced = (now - lastOwnDeathAnnounceAt) < 60
+        if age < 120 and not recentlyAnnounced then
+          announceToGuild = true
+          lastOwnDeathAnnounceAt = now
+        end
       end
     end
-    
+    if announceToGuild then
+      local where = (p.zone or "Unknown")
+      if p.subzone and p.subzone ~= "" then where = where .. " - " .. p.subzone end
+      local msg = string.format("%s has died (lvl %d) in %s.", p.name or p.playerKey or "Unknown", p.level or 0, where)
+      SendChatMessage(msg, "GUILD")
+    end
+
+    if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
+
+  elseif topic == "RESET" then
+    local sig = tonumber(p.sig)
+    local expected = RepriseHC._ResetSignature
+    if not sig or not expected or sig ~= expected then
+      if RHC_DEBUG then
+        print("|cffff6666[RHC]|r reset ignored (bad signature)")
+      end
+      return
+    end
+
+    local stamp = tonumber(p.stamp) or 0
+    if stamp ~= 0 then
+      if RepriseHC._LastResetStamp and stamp == RepriseHC._LastResetStamp then
+        if RHC_DEBUG then print("|cff99ccff[RHC]|r reset echo ignored") end
+        return
+      end
+      if lastResetStamp and stamp == lastResetStamp then
+        return
+      end
+      lastResetStamp = stamp
+    else
+      lastResetStamp = time()
+    end
+
+    RepriseHC._LastResetStamp = lastResetStamp
+
+    local origin = p.source
+    if type(origin) ~= "string" or origin == "" then
+      origin = sender or ""
+    end
+    if type(origin) == "string" and origin ~= "" then
+      origin = origin:gsub("-.*$", "")
+    else
+      origin = nil
+    end
+
+    local reason = "|cffff6060Global reset applied.|r"
+    if origin then
+      reason = ("|cffff6060Global reset applied by %s.|r"):format(origin)
+    end
+
+    if RepriseHC._HardResetDB then
+      RepriseHC._HardResetDB(reason)
+    end
+
+    haveSnapshot = false
     if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
 
   elseif topic == "REQSNAP" then
-    RepriseHC.Comm_Send("SNAP", { kind="SNAP", data=BuildSnapshot() })
+    SendSnapshotPayload({ kind="SNAP", data=BuildSnapshot() }, sender)
 
   elseif topic == "SNAP" and p and p.data then
     MergeSnapshot(p.data)
@@ -405,6 +717,11 @@ function HasSnapshotFlag()
 end
 
 function RepriseHC.Comm_Send(topic, payloadTable)
+  if topic == "SNAP" then
+    SendSnapshotPayload(payloadTable or {}, nil)
+    return
+  end
+
   local wire = BuildWire(topic, payloadTable)
   if not wire or wire == "" then return end
 
@@ -432,6 +749,15 @@ function RepriseHC.Comm_Send(topic, payloadTable)
     -- Short-delay snapshots heal any missed packets once the channel settles
     C_Timer.After(5,  SendSmallSnapshot)
     C_Timer.After(20, SendSmallSnapshot)
+  end
+end
+
+function RepriseHC.Comm_MarkOwnDeathAnnounced(when)
+  local stamp = tonumber(when) or time()
+  if stamp and stamp > 0 then
+    lastOwnDeathAnnounceAt = stamp
+  else
+    lastOwnDeathAnnounceAt = time()
   end
 end
 
