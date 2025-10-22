@@ -189,7 +189,7 @@ local function BuildWire(topic, payloadTable)
 end
 
 -- -------- snapshot build/merge --------
-local function BuildSnapshot()
+function BuildSnapshot()
   local db = RepriseHC.DB()
   return {
     ver         = RepriseHC.version or "0",
@@ -198,6 +198,10 @@ local function BuildSnapshot()
     deathLog    = db.deathLog or {},
     levelCap    = (db.config and db.config.levelCap) or RepriseHC.levelCap
   }
+end
+
+local function SendSmallSnapshot()
+  RepriseHC.Comm_Send("SNAP", { kind="SNAP", data=BuildSnapshot() })
 end
 
 local function MergeSnapshot(p)
@@ -326,7 +330,7 @@ local function HandleIncoming(prefix, payload, channel, sender)
 RepriseHC.Comm_OnAddonMessage = HandleIncoming
 
 -- -------- public send (multi-path with DEATH fan-out) --------
-local function HasSnapshotFlag()
+function HasSnapshotFlag()
   if RepriseHC and RepriseHC.Comm_HaveSnapshot then return true end
   return haveSnapshot
 end
@@ -341,17 +345,33 @@ function RepriseHC.Comm_Send(topic, payloadTable)
     usedGroup = SendViaGroup(wire)
   end
 
-  if topic == "DEATH" then
-    -- immediate direct whisper(s)
+  -- if topic == "DEATH" then
+  --   -- immediate direct whisper(s)
+  --   SendWhisperFallback(wire, 12)
+
+  --   -- late safety resend (kept)
+  --   local late = wire
+  --   C_Timer.After(25, function()
+  --     local ok = SendViaGuild(late)
+  --     if not ok then ok = SendViaGroup(late) end
+  --     SendWhisperFallback(late, 12)
+  --   end)
+  -- end
+    if topic == "DEATH" then
+    -- existing immediate fan-out:
     SendWhisperFallback(wire, 12)
 
-    -- late safety resend (kept)
+    -- late safety resend (you already have this; keep it)
     local late = wire
     C_Timer.After(25, function()
       local ok = SendViaGuild(late)
       if not ok then ok = SendViaGroup(late) end
       SendWhisperFallback(late, 12)
     end)
+
+    -- NEW: push a tiny structured SNAP after the channel settles
+    C_Timer.After(5,  SendSmallSnapshot)
+    C_Timer.After(20, SendSmallSnapshot)
   end
 end
 
