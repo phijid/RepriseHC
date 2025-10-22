@@ -414,10 +414,23 @@ local function MergeSnapshot(p)
     return string.format("%s#%d", name, when)
   end
 
-  local staged = {}
+  local function shallowCopy(entry)
+    if type(entry) ~= "table" then return nil end
+    local copy = {}
+    for k, v in pairs(entry) do copy[k] = v end
+    return copy
+  end
+
+  local staged, stagedByNorm = {}, {}
   for _, raw in pairs(incoming) do
     local entry = cloneDeathEntry(raw)
-    if entry then table.insert(staged, entry) end
+    if entry then
+      table.insert(staged, entry)
+      local norm = normalizeEntryKey(entry)
+      if norm ~= "" then
+        stagedByNorm[norm] = entry
+      end
+    end
   end
 
   if #staged == 0 then return end
@@ -426,23 +439,28 @@ local function MergeSnapshot(p)
     return (a.when or 0) < (b.when or 0)
   end)
 
-  if #db.deathLog == 0 then
-    for _, entry in ipairs(staged) do
-      table.insert(db.deathLog, entry)
+  local seen, seenFallback = {}, {}
+  local function markSeen(entry)
+    if not entry then return end
+    local norm = normalizeEntryKey(entry)
+    if norm ~= "" and not seen[norm] then
+      seen[norm] = entry
     end
-    return
+    local fb = fallbackKey(entry)
+    if fb and not seenFallback[fb] then
+      seenFallback[fb] = entry
+    end
   end
 
-  local seen, seenFallback = {}, {}
   for _, existing in ipairs(db.deathLog) do
-    local norm = normalizeEntryKey(existing)
-    if norm ~= "" and not seen[norm] then
-      seen[norm] = existing
-    end
-    local fb = fallbackKey(existing)
-    if fb and not seenFallback[fb] then
-      seenFallback[fb] = existing
-    end
+    markSeen(existing)
+  end
+
+  local function appendEntry(entry)
+    local copy = shallowCopy(entry)
+    if not copy then return end
+    table.insert(db.deathLog, copy)
+    markSeen(copy)
   end
 
   for _, entry in ipairs(staged) do
@@ -456,8 +474,7 @@ local function MergeSnapshot(p)
           end
         end
       else
-        table.insert(db.deathLog, entry)
-        seen[norm] = entry
+        appendEntry(entry)
       end
     else
       local fb = fallbackKey(entry)
@@ -469,10 +486,7 @@ local function MergeSnapshot(p)
           end
         end
       else
-        table.insert(db.deathLog, entry)
-        if fb then
-          seenFallback[fb] = entry
-        end
+        appendEntry(entry)
       end
     end
   end
@@ -487,35 +501,18 @@ local function MergeSnapshot(p)
   end
 
   if myNormKey and myNormKey ~= "" and not seen[myNormKey] then
-    local match
-    for _, entry in ipairs(staged) do
-      if normalizeEntryKey(entry) == myNormKey then
-        match = entry
-        break
-      end
-    end
+    local match = stagedByNorm[myNormKey]
     if not match then
       for _, entry in ipairs(staged) do
-        local fb = fallbackKey(entry)
-        if fb and not seenFallback[fb] then
-          local candidate = normalizeEntryKey(entry)
-          if candidate == "" then
-            local nm = (entry.name or entry.playerKey or ""):lower():gsub("%-.*$", "")
-            if nm == myNormKey then
-              match = entry
-              break
-            end
-          end
+        local nm = (entry.name or entry.playerKey or ""):lower():gsub("%-.*$", "")
+        if nm == myNormKey then
+          match = entry
+          break
         end
       end
     end
     if match then
-      table.insert(db.deathLog, match)
-      seen[myNormKey] = match
-      local fb = fallbackKey(match)
-      if fb then
-        seenFallback[fb] = match
-      end
+      appendEntry(match)
     end
   end
 
