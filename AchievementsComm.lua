@@ -5,6 +5,10 @@
 local PREFIX = "RepriseHC_ACH"
 local RHC_DEBUG = true  -- set true to print who we whisper
 
+local function debugPrint(...)
+  if RHC_DEBUG and print then print("|cff99ccff[RHC]|r", ...) end
+end
+
 if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
   C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
 end
@@ -227,12 +231,6 @@ local function SendWhisperTargets(payload, name, debugLabel)
   return sent
 end
 
-
-
-local function debugPrint(...)
-  if RHC_DEBUG and print then print("|cff99ccff[RHC]|r", ...) end
-end
-
 local function SendWhisperFallback(payload, maxPeers)
   maxPeers = maxPeers or 12
   if not IsInGuild() then return false end
@@ -326,8 +324,8 @@ end
 local function SendDirectToOtherOnline(payload)
   if not IsInGuild() then return false end
   PollGuildRoster()
-  local n, me = GetNumGuildMembers() or 0, UnitName("player")
-  local others = {}
+  local n = GetNumGuildMembers() or 0
+  local other
   for i=1,n do
     local name, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
     if online and name and not IsSelf(name) then
