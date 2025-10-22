@@ -6,6 +6,9 @@ local PREFIX = "RepriseHC_ACH"
 local RHC_DEBUG = true  -- set true to print who we whisper
 local lastOwnDeathAnnounceAt = 0
 local lastResetStamp
+local haveSnapshot = false
+local lastUpgradeRequestAt = 0
+local SendSnapshotPayload
 
 local function debugPrint(...)
   if RHC_DEBUG and print then print("|cff99ccff[RHC]|r", ...) end
@@ -84,6 +87,77 @@ local function Encode(tbl)
   -- AceSerializer strings are safe for addon channels and AceComm handles splitting.
   local s = AceSer:Serialize(tbl)
   return s
+end
+
+local function CurrentDbVersion()
+  if RepriseHC and RepriseHC.GetDbVersion then
+    local ok = tonumber(RepriseHC.GetDbVersion())
+    if ok and ok > 0 then return ok end
+  end
+  local db = RepriseHC and RepriseHC.DB and RepriseHC.DB()
+  if db and db.config and db.config.dbVersion then
+    return tonumber(db.config.dbVersion) or 0
+  end
+  return 0
+end
+
+local function EnsureDbVersion(ver)
+  if not ver or ver <= 0 then return end
+  if RepriseHC and RepriseHC.SetDbVersion then
+    RepriseHC.SetDbVersion(ver)
+  else
+    local db = RepriseHC and RepriseHC.DB and RepriseHC.DB()
+    if db then
+      db.config = db.config or {}
+      db.config.dbVersion = ver
+    end
+  end
+end
+
+local function ShouldAcceptIncremental(dbv, sender)
+  local incoming = tonumber(dbv) or 0
+  local localVersion = CurrentDbVersion()
+  if incoming == 0 then
+    if localVersion ~= 0 and RHC_DEBUG then
+      print("|cffff6666[RHC]|r dropping payload without db version (have", localVersion, ")")
+    end
+    if localVersion ~= 0 and sender and SendSnapshotPayload then
+      SendSnapshotPayload({ kind="SNAP", data=BuildSnapshot() }, sender)
+    end
+    return localVersion == 0
+  end
+  if localVersion == 0 then
+    EnsureDbVersion(incoming)
+    return true
+  end
+  if incoming < localVersion then
+    if RHC_DEBUG then
+      print("|cffff6666[RHC]|r dropping older payload", incoming, "<", localVersion)
+    end
+    if sender and SendSnapshotPayload then
+      SendSnapshotPayload({ kind="SNAP", data=BuildSnapshot() }, sender)
+    end
+    return false
+  end
+  if incoming > localVersion then
+    if RHC_DEBUG then
+      print("|cffff8800[RHC]|r newer payload detected", incoming, ">", localVersion)
+    end
+    haveSnapshot = false
+    if C_Timer and C_Timer.After then
+      local now = GetTime and GetTime() or time()
+      if now - (lastUpgradeRequestAt or 0) > 5 then
+        lastUpgradeRequestAt = now
+        C_Timer.After(1, function()
+          if RepriseHC and RepriseHC.Comm_Send then
+            RepriseHC.Comm_Send("REQSNAP", { need="all" })
+          end
+        end)
+      end
+    end
+    return false
+  end
+  return true
 end
 
 local function TryDecodeAce(payload)
@@ -300,6 +374,12 @@ end
 
 -- -------- wire building (structured for all topics we send) --------
 local function BuildWire(topic, payloadTable)
+  if type(payloadTable) == "table" then
+    if payloadTable.dbv == nil then
+      local dbv = CurrentDbVersion()
+      if dbv > 0 then payloadTable.dbv = dbv else payloadTable.dbv = 0 end
+    end
+  end
   return Encode(Envelope(topic, payloadTable or {}))
 end
 
@@ -308,6 +388,7 @@ function BuildSnapshot()
   local db = RepriseHC.DB()
   return {
     ver         = RepriseHC.version or "0",
+    dbVersion   = CurrentDbVersion(),
     characters  = db.characters or {},
     guildFirsts = db.guildFirsts or {},
     deathLog    = db.deathLog or {},
@@ -335,7 +416,7 @@ local function SendDirectToOtherOnline(payload)
   return sent
 end
 
-local function SendSnapshotPayload(payloadTable, target)
+SendSnapshotPayload = function(payloadTable, target)
   local wire = BuildWire("SNAP", payloadTable)
   if not wire or wire == "" then return false end
 
@@ -358,10 +439,75 @@ end
 
 local function MergeSnapshot(p)
   if type(p) ~= "table" then return end
+  local incomingVersion = tonumber(p.dbVersion) or tonumber(p.dbv) or 0
+  local localVersion = CurrentDbVersion()
+
+  if incomingVersion == 0 then
+    if localVersion ~= 0 then
+      if RHC_DEBUG then print("|cffff6666[RHC]|r snapshot rejected (missing version)") end
+      return
+    end
+  elseif localVersion == 0 then
+    EnsureDbVersion(incomingVersion)
+    localVersion = incomingVersion
+  elseif incomingVersion < localVersion then
+    if RHC_DEBUG then
+      print("|cffff6666[RHC]|r snapshot rejected (older version)", incomingVersion, "<", localVersion)
+    end
+    return
+  elseif incomingVersion > localVersion then
+    if RHC_DEBUG then
+      print("|cffff8800[RHC]|r snapshot adopting newer version", incomingVersion)
+    end
+    if RepriseHC and RepriseHC._HardResetDB then
+      RepriseHC._HardResetDB("|cffff6060Global reset detected from sync.|r", incomingVersion)
+    else
+      local db = RepriseHC.DB()
+      if db then
+        db.characters, db.guildFirsts, db.deathLog, db.groupAssignments = {}, {}, {}, {}
+        db.config = db.config or {}
+        db.config.dbVersion = incomingVersion
+      end
+    end
+    EnsureDbVersion(incomingVersion)
+    localVersion = incomingVersion
+  end
+
   local db = RepriseHC.DB()
   db.characters  = db.characters  or {}
   db.guildFirsts = db.guildFirsts or {}
   db.deathLog    = db.deathLog    or {}
+  db.groupAssignments = db.groupAssignments or {}
+  db.config = db.config or {}
+  if localVersion ~= 0 or incomingVersion ~= 0 then
+    db.config.dbVersion = localVersion ~= 0 and localVersion or incomingVersion
+  end
+
+  local function cloneDeathEntry(src)
+    if type(src) ~= "table" then return nil end
+    local when = tonumber(src.when) or tonumber(src.time)
+    if when and when > 0 then
+      when = math.floor(when)
+    else
+      when = time()
+    end
+    local pk = src.playerKey or src.player or src.name
+    if not pk or pk == "" then return nil end
+    local nm = src.name
+    if (not nm or nm == "") and type(pk) == "string" then
+      nm = pk:match("^([^%-]+)") or pk
+    end
+    return {
+      playerKey = pk,
+      name      = nm,
+      level     = src.level,
+      class     = src.class,
+      race      = src.race,
+      zone      = src.zone,
+      subzone   = src.subzone,
+      when      = when,
+    }
+  end
 
   local function cloneDeathEntry(src)
     if type(src) ~= "table" then return nil end
@@ -432,9 +578,6 @@ local function MergeSnapshot(p)
         stagedByNorm[norm] = entry
       end
     end
-    if match then
-      appendEntry(match)
-    end
   end
 
   if #staged == 0 then return end
@@ -493,6 +636,32 @@ local function MergeSnapshot(p)
         appendEntry(entry)
       end
     end
+    if match then
+      appendEntry(match)
+    end
+  end
+
+  if #staged == 0 then return end
+
+  table.sort(staged, function(a, b)
+    return (a.when or 0) < (b.when or 0)
+  end)
+
+  local seen, seenFallback = {}, {}
+  local function markSeen(entry)
+    if not entry then return end
+    local norm = normalizeEntryKey(entry)
+    if norm ~= "" and not seen[norm] then
+      seen[norm] = entry
+    end
+    local fb = fallbackKey(entry)
+    if fb and not seenFallback[fb] then
+      seenFallback[fb] = entry
+    end
+  end
+
+  for _, existing in ipairs(db.deathLog) do
+    markSeen(existing)
   end
 
   -- Ensure our own death record is restored when peers still have it.
@@ -533,9 +702,6 @@ local function IsDup(sender, q)
   if not last or q > last then lastSeqBySender[sender] = q; return false end
   return true
 end
-
--- -------- receiver --------
-local haveSnapshot = false
 
 local function normalizeKeyAndName(p, sender)
   if not p.playerKey or p.playerKey == "" then
@@ -580,6 +746,7 @@ local function HandleIncoming(prefix, payload, channel, sender)
   local p, topic = t.p or {}, t.t
 
   if topic == "ACH" then
+    if not ShouldAcceptIncremental(p.dbv, sender) then return end
     normalizeKeyAndName(p, sender)
 
     local db = RepriseHC.DB()
@@ -595,6 +762,7 @@ local function HandleIncoming(prefix, payload, channel, sender)
     if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
 
   elseif topic == "DEATH" then
+    if not ShouldAcceptIncremental(p.dbv, sender) then return end
     normalizeKeyAndName(p, sender)
 
     -- Check for duplicates using normalized comparison
@@ -662,6 +830,7 @@ local function HandleIncoming(prefix, payload, channel, sender)
     end
 
     local stamp = tonumber(p.stamp) or 0
+    local dbVersion = tonumber(p.dbv) or (stamp ~= 0 and stamp or nil)
     if stamp ~= 0 then
       if RepriseHC._LastResetStamp and stamp == RepriseHC._LastResetStamp then
         if RHC_DEBUG then print("|cff99ccff[RHC]|r reset echo ignored") end
@@ -670,9 +839,9 @@ local function HandleIncoming(prefix, payload, channel, sender)
       if lastResetStamp and stamp == lastResetStamp then
         return
       end
-      lastResetStamp = stamp
+      lastResetStamp = dbVersion or stamp
     else
-      lastResetStamp = time()
+      lastResetStamp = dbVersion or time()
     end
 
     RepriseHC._LastResetStamp = lastResetStamp
@@ -693,7 +862,11 @@ local function HandleIncoming(prefix, payload, channel, sender)
     end
 
     if RepriseHC._HardResetDB then
-      RepriseHC._HardResetDB(reason)
+      RepriseHC._HardResetDB(reason, dbVersion)
+    end
+
+    if dbVersion and dbVersion > 0 then
+      EnsureDbVersion(dbVersion)
     end
 
     haveSnapshot = false
