@@ -326,8 +326,8 @@ end
 local function SendDirectToOtherOnline(payload)
   if not IsInGuild() then return false end
   PollGuildRoster()
-  local n = GetNumGuildMembers() or 0
-  local other
+  local n, me = GetNumGuildMembers() or 0, UnitName("player")
+  local others = {}
   for i=1,n do
     local name, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
     if online and name and not IsSelf(name) then
