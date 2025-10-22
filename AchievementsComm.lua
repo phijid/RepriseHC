@@ -4,20 +4,10 @@
 
 local PREFIX = "RepriseHC_ACH"
 local RHC_DEBUG = true  -- set true to print who we whisper
-local suppressGuildAnnouncementsUntil = 0
 local lastOwnDeathAnnounceAt = 0
 
 local function debugPrint(...)
   if RHC_DEBUG and print then print("|cff99ccff[RHC]|r", ...) end
-end
-
-local function SuppressGuildAnnouncements(seconds)
-  seconds = tonumber(seconds) or 0
-  if seconds <= 0 then return end
-  local untilTime = GetTime() + seconds
-  if untilTime > suppressGuildAnnouncementsUntil then
-    suppressGuildAnnouncementsUntil = untilTime
-  end
 end
 
 if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
@@ -407,36 +397,61 @@ local function MergeSnapshot(p)
   end
   
   local incoming = p.deathLog or {}
-  local function normalizeForCompare(key)
-    return (key or ""):lower():gsub("%-.*$", "")
+  local function normalizeEntryKey(entry)
+    if not entry then return "" end
+    local key = entry.playerKey
+    if not key or key == "" then key = entry.name end
+    if not key or key == "" then return "" end
+    return key:lower():gsub("%-.*$", "")
   end
 
-  local currentCount = #db.deathLog
-  if currentCount == 0 then
-    for _,d in ipairs(incoming) do
-      local entry = cloneDeathEntry(d)
-      if entry then table.insert(db.deathLog, entry) end
+  local staged = {}
+  for _, raw in pairs(incoming) do
+    local entry = cloneDeathEntry(raw)
+    if entry then table.insert(staged, entry) end
+  end
+
+  if #staged == 0 then return end
+
+  table.sort(staged, function(a, b)
+    return (a.when or 0) < (b.when or 0)
+  end)
+
+  if #db.deathLog == 0 then
+    for _, entry in ipairs(staged) do
+      table.insert(db.deathLog, entry)
     end
     return
   end
 
   local seen = {}
-  for _,d in ipairs(db.deathLog) do
-    if d.playerKey or d.name then
-      seen[normalizeForCompare(d.playerKey or d.name)] = true
+  for _, existing in ipairs(db.deathLog) do
+    local norm = normalizeEntryKey(existing)
+    if norm ~= "" and not seen[norm] then
+      seen[norm] = existing
     end
   end
 
-  for _,d in ipairs(incoming) do
-    local entry = cloneDeathEntry(d)
-    if entry then
-      local norm = normalizeForCompare(entry.playerKey)
-      if norm ~= "" and not seen[norm] then
+  for _, entry in ipairs(staged) do
+    local norm = normalizeEntryKey(entry)
+    if norm ~= "" then
+      local dest = seen[norm]
+      if dest then
+        for k, v in pairs(entry) do
+          if v ~= nil and v ~= "" then
+            dest[k] = v
+          end
+        end
+      else
         table.insert(db.deathLog, entry)
-        seen[norm] = true
+        seen[norm] = entry
       end
     end
   end
+
+  table.sort(db.deathLog, function(a, b)
+    return (a.when or 0) < (b.when or 0)
+  end)
 end
 
 -- -------- RX dedupe by sender sequence --------
@@ -544,13 +559,13 @@ local function HandleIncoming(prefix, payload, channel, sender)
     if IsInGuild() and RepriseHC.GetShowToGuild and RepriseHC.GetShowToGuild() then
       local myKey = RepriseHC.PlayerKey and RepriseHC.PlayerKey() or UnitName("player")
       local myNorm = normalizeForCompare(myKey)
-      if incomingNorm ~= "" and incomingNorm == myNorm then
+      local isSelfSource = IsSelf(sender) or IsSelf(sid)
+      if incomingNorm ~= "" and incomingNorm == myNorm and isSelfSource then
         local now = time()
         local age = now - (eventWhen or now)
         if age < 0 then age = 0 end
-        local suppressed = (GetTime() < suppressGuildAnnouncementsUntil)
         local recentlyAnnounced = (now - lastOwnDeathAnnounceAt) < 60
-        if not suppressed and age < 120 and not recentlyAnnounced then
+        if age < 120 and not recentlyAnnounced then
           announceToGuild = true
           lastOwnDeathAnnounceAt = now
         end
@@ -589,10 +604,6 @@ function RepriseHC.Comm_Send(topic, payloadTable)
   if topic == "SNAP" then
     SendSnapshotPayload(payloadTable or {}, nil)
     return
-  end
-
-  if topic == "REQSNAP" then
-    SuppressGuildAnnouncements(12)
   end
 
   local wire = BuildWire(topic, payloadTable)
