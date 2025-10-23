@@ -644,6 +644,20 @@ SendSnapshotPayload = function(payloadTable, target)
           payloadTable.dbVersion = dataVersion
         end
       end
+      other = name
+    end
+  end
+  if not other then return false end
+
+  local sent = SendWhisperTargets(payload, other, "DEATH direct->")
+  return sent
+end
+
+SendSnapshotPayload = function(payloadTable, target)
+  if type(payloadTable) == "table" then
+    local current = CurrentDbVersion()
+    if current and current > 0 and payloadTable.dbVersion == nil then
+      payloadTable.dbVersion = current
     end
     if payloadTable.dbVersion == nil then
       payloadTable.dbVersion = 0
