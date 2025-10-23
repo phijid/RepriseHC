@@ -709,11 +709,13 @@ local function __RHC_Ach_OnEvent(event, ...)
     C_Timer.After(0, function() UpdateInstanceState() end)
     C_Timer.After(1.0, function()
       if RepriseHC.IsGuildAllowed and RepriseHC.IsGuildAllowed() then
-        local level = UnitLevel("player") or 1
-        if RepriseHC.Ach_AwardLevelsUpTo then RepriseHC.Ach_AwardLevelsUpTo(level) end
-        if RepriseHC.Ach_CheckProfessions then RepriseHC.Ach_CheckProfessions() end
-        if level >= RepriseHC.levelCap and RepriseHC.Ach_TryGuildFirsts then RepriseHC.Ach_TryGuildFirsts() end
-        if RepriseHC.Ach_CheckSpeedrunOnDing then RepriseHC.Ach_CheckSpeedrunOnDing(math.floor(level / 10) * 10) end
+        if RepriseHC.AchievementTesting then
+          local level = UnitLevel("player") or 1
+          if RepriseHC.Ach_AwardLevelsUpTo then RepriseHC.Ach_AwardLevelsUpTo(level) end
+          if RepriseHC.Ach_CheckProfessions then RepriseHC.Ach_CheckProfessions() end
+          if level >= RepriseHC.levelCap and RepriseHC.Ach_TryGuildFirsts then RepriseHC.Ach_TryGuildFirsts() end
+          if RepriseHC.Ach_CheckSpeedrunOnDing then RepriseHC.Ach_CheckSpeedrunOnDing(math.floor(level / 10) * 10) end
+        end
       end
     end)
   elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then

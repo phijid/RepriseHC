@@ -10,6 +10,7 @@ RepriseHC.levels = {10,20,30,40,50,60}
 RepriseHC.showToGuild = true
 RepriseHC.runtime = RepriseHC.runtime or {}
 RepriseHC.defaultDbVersion = DEFAULT_DB_VERSION
+RepriseHC.AchievementTesting = false
 
 RepriseHC.speedrunThresholds = {
   [10] = 2,
