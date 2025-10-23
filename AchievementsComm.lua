@@ -137,6 +137,10 @@ local function EnsureDbVersion(ver)
     local ach = RepriseHC.PruneAchievementsToVersion(version)
     if ach and ach > 0 then removed = removed + ach end
   end
+  if RepriseHC and RepriseHC.PruneGroupAssignmentsToVersion then
+    local grp = RepriseHC.PruneGroupAssignmentsToVersion(version)
+    if grp and grp > 0 then removed = removed + grp end
+  end
   if removed > 0 and RepriseHC and RepriseHC.RefreshUI then
     RepriseHC.RefreshUI()
   end
@@ -151,6 +155,10 @@ local function PruneLocalDataToVersion(version)
   if RepriseHC and RepriseHC.PruneAchievementsToVersion then
     local ach = RepriseHC.PruneAchievementsToVersion(version)
     if ach and ach > 0 then removed = removed + ach end
+  end
+  if RepriseHC and RepriseHC.PruneGroupAssignmentsToVersion then
+    local grp = RepriseHC.PruneGroupAssignmentsToVersion(version)
+    if grp and grp > 0 then removed = removed + grp end
   end
   if removed > 0 and RepriseHC and RepriseHC.RefreshUI then
     RepriseHC.RefreshUI()
@@ -441,6 +449,7 @@ function BuildSnapshot()
   db.guildFirsts = db.guildFirsts or {}
   db.deathLog = db.deathLog or {}
   db.config = db.config or {}
+  db.groupAssignments = db.groupAssignments or {}
 
   local dbVersion = CurrentDbVersion()
   if RepriseHC and RepriseHC.PruneAchievementsToVersion then
@@ -448,6 +457,9 @@ function BuildSnapshot()
   end
   if RepriseHC and RepriseHC.PruneDeathLogToVersion then
     RepriseHC.PruneDeathLogToVersion(dbVersion)
+  end
+  if RepriseHC and RepriseHC.PruneGroupAssignmentsToVersion then
+    RepriseHC.PruneGroupAssignmentsToVersion(dbVersion)
   end
 
   local charactersCopy = {}
@@ -532,12 +544,42 @@ function BuildSnapshot()
     end
   end
 
+  local groupAssignmentsCopy = {}
+  for playerKey, entry in pairs(db.groupAssignments) do
+    local groupName, entryVersion, when
+    if type(entry) == "table" then
+      groupName = entry.group or entry.name or entry.value
+      entryVersion = tonumber(entry.dbVersion or entry.dbv) or dbVersion
+      when = tonumber(entry.when or entry.time) or 0
+    elseif type(entry) == "string" then
+      groupName = entry
+      entryVersion = dbVersion ~= 0 and dbVersion or 0
+      when = 0
+    end
+    if groupName and groupName ~= "" then
+      if dbVersion == 0 or entryVersion == 0 or entryVersion == dbVersion then
+        local clone = {
+          group = groupName,
+          when = when,
+        }
+        if dbVersion ~= 0 then
+          clone.dbVersion = dbVersion
+        else
+          clone.dbVersion = entryVersion
+        end
+        clone.dbv = nil
+        groupAssignmentsCopy[playerKey] = clone
+      end
+    end
+  end
+
   return {
     ver         = RepriseHC.version or "0",
     dbVersion   = dbVersion,
     characters  = charactersCopy,
     guildFirsts = guildFirstsCopy,
     deathLog    = deathLogCopy,
+    groupAssignments = groupAssignmentsCopy,
     levelCap    = db.config.levelCap or RepriseHC.levelCap
   }
 end
@@ -683,6 +725,8 @@ local function MergeSnapshot(p)
 
   PruneLocalDataToVersion(localVersion)
 
+  local groupAssignmentsChanged = false
+
   local function cloneDeathEntry(src)
     if type(src) ~= "table" then return nil end
     local when = tonumber(src.when) or tonumber(src.time)
@@ -787,7 +831,48 @@ local function MergeSnapshot(p)
       end
     end
   end
-  
+
+  for playerKey, info in pairs(p.groupAssignments or {}) do
+    local groupName, entryVersion, when = nil, localVersion, 0
+    if type(info) == "table" then
+      groupName = info.group or info.name or info.value
+      entryVersion = tonumber(info.dbVersion or info.dbv) or localVersion
+      when = tonumber(info.when or info.time) or 0
+    elseif type(info) == "string" then
+      groupName = info
+      entryVersion = localVersion
+      when = 0
+    end
+
+    if groupName and groupName ~= "" then
+      if localVersion == 0 or entryVersion == 0 or entryVersion == localVersion then
+        if RepriseHC and RepriseHC.UpdateGroupAssignment then
+          local changedNow = RepriseHC.UpdateGroupAssignment(playerKey, groupName, { when = when, dbVersion = (localVersion ~= 0 and localVersion or entryVersion) })
+          if changedNow then groupAssignmentsChanged = true end
+        else
+          local versionToUse = localVersion ~= 0 and localVersion or entryVersion
+          db.groupAssignments[playerKey] = {
+            group = groupName,
+            when = when,
+            dbVersion = versionToUse,
+          }
+          db.groupAssignments[playerKey].dbv = nil
+          groupAssignmentsChanged = true
+        end
+      end
+    else
+      if RepriseHC and RepriseHC.UpdateGroupAssignment then
+        local changedNow = RepriseHC.UpdateGroupAssignment(playerKey, nil)
+        if changedNow then groupAssignmentsChanged = true end
+      else
+        if db.groupAssignments[playerKey] ~= nil then
+          db.groupAssignments[playerKey] = nil
+          groupAssignmentsChanged = true
+        end
+      end
+    end
+  end
+
   local incoming = p.deathLog or {}
   local function normalizeEntryKey(entry)
     if not entry then return "" end
@@ -848,6 +933,30 @@ local function MergeSnapshot(p)
       if norm ~= "" then
         stagedByNorm[norm] = entry
       end
+    else
+      local fb = fallbackKey(entry)
+      local dest = fb and seenFallback[fb] or nil
+      if dest then
+        for k, v in pairs(entry) do
+          if v ~= nil and v ~= "" then
+            dest[k] = v
+          end
+        end
+        if localVersion ~= 0 then
+          dest.dbVersion = localVersion
+        end
+      else
+        appendEntry(entry)
+      end
+    end
+  end
+
+  -- Ensure our own death record is restored when peers still have it.
+  local myNormKey
+  if RepriseHC and RepriseHC.PlayerKey then
+    local selfKey = RepriseHC.PlayerKey()
+    if selfKey and selfKey ~= "" then
+      myNormKey = selfKey:lower():gsub("%-.*$", "")
     end
   end
 
@@ -952,6 +1061,10 @@ local function MergeSnapshot(p)
   table.sort(db.deathLog, function(a, b)
     return (a.when or 0) < (b.when or 0)
   end)
+
+  if groupAssignmentsChanged and RepriseHC and RepriseHC.RefreshUI then
+    RepriseHC.RefreshUI()
+  end
   releaseCopyAlias()
 end
 
@@ -1135,6 +1248,51 @@ local function HandleIncoming(prefix, payload, channel, sender)
     end
 
     if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
+
+  elseif topic == "GROUP" then
+    if not ShouldAcceptIncremental(p.dbv, sender) then return end
+    normalizeKeyAndName(p, sender)
+
+    local rawGroup = p.group or p.groupName or p.value or p.assignment
+    if type(rawGroup) == "string" then
+      rawGroup = rawGroup:gsub("^%s+", ""):gsub("%s+$", "")
+      if rawGroup == "" then rawGroup = nil end
+    else
+      rawGroup = nil
+    end
+
+    local when = tonumber(p.when or p.time) or time()
+    local incomingVersion = tonumber(p.dbVersion or p.dbv) or CurrentDbVersion()
+    if incomingVersion < 0 then incomingVersion = 0 end
+
+    local changed = false
+    local db = SafeDB()
+    db.groupAssignments = db.groupAssignments or {}
+
+    if rawGroup then
+      if RepriseHC and RepriseHC.UpdateGroupAssignment then
+        changed = RepriseHC.UpdateGroupAssignment(p.playerKey, rawGroup, { when = when, dbVersion = incomingVersion ~= 0 and incomingVersion or nil })
+      else
+        db.groupAssignments[p.playerKey] = {
+          group = rawGroup,
+          when = when,
+          dbVersion = incomingVersion,
+        }
+        db.groupAssignments[p.playerKey].dbv = nil
+        changed = true
+      end
+    else
+      if RepriseHC and RepriseHC.UpdateGroupAssignment then
+        changed = RepriseHC.UpdateGroupAssignment(p.playerKey, nil)
+      else
+        if db.groupAssignments[p.playerKey] ~= nil then
+          db.groupAssignments[p.playerKey] = nil
+          changed = true
+        end
+      end
+    end
+
+    if changed and RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
 
   elseif topic == "RESET" then
     local sig = tonumber(p.sig)

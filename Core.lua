@@ -201,6 +201,108 @@ function RepriseHC.DB()
   return EnsureDb()
 end
 
+local function ExtractGroupAssignment(value)
+  if type(value) == "table" then
+    local group = value.group or value.name or value.value
+    if not group or group == "" then return nil end
+    local when = tonumber(value.when or value.time) or 0
+    local version = tonumber(value.dbVersion or value.dbv) or 0
+    return group, version, when
+  elseif type(value) == "string" then
+    local trimmed = value:gsub("^%s+", ""):gsub("%s+$", "")
+    if trimmed == "" then return nil end
+    return trimmed, 0, 0
+  end
+  return nil
+end
+
+function RepriseHC.PruneGroupAssignmentsToVersion(version)
+  local db = EnsureDb()
+  local assignments = db.groupAssignments
+  if not assignments then return 0 end
+
+  local targetVersion = tonumber(version) or 0
+  local removed = 0
+
+  for key, value in pairs(assignments) do
+    local group, entryVersion, when = ExtractGroupAssignment(value)
+    if not group then
+      assignments[key] = nil
+      removed = removed + 1
+    else
+      if targetVersion ~= 0 then
+        if entryVersion ~= 0 and entryVersion ~= targetVersion then
+          assignments[key] = nil
+          removed = removed + 1
+        else
+          assignments[key] = { group = group, when = when, dbVersion = targetVersion }
+        end
+      else
+        assignments[key] = { group = group, when = when, dbVersion = entryVersion >= 0 and entryVersion or 0 }
+      end
+      local entry = assignments[key]
+      if entry then entry.dbv = nil end
+    end
+  end
+
+  return removed
+end
+
+function RepriseHC.UpdateGroupAssignment(playerKey, groupName, opts)
+  if not playerKey or playerKey == "" then return false end
+  local db = EnsureDb()
+  db.groupAssignments = db.groupAssignments or {}
+  local assignments = db.groupAssignments
+
+  if groupName ~= nil then
+    groupName = tostring(groupName)
+    groupName = groupName:gsub("^%s+", ""):gsub("%s+$", "")
+    if groupName == "" then groupName = nil end
+  end
+
+  if not groupName or groupName == "" then
+    if assignments[playerKey] ~= nil then
+      assignments[playerKey] = nil
+      return true
+    end
+    return false
+  end
+
+  local when = tonumber(opts and (opts.when or opts.time))
+  if not when or when <= 0 then
+    when = GetServerTime and GetServerTime() or time()
+  end
+
+  local version = tonumber(opts and (opts.dbVersion or opts.dbv))
+  if not version then
+    version = RepriseHC.GetDbVersion()
+  end
+  if version < 0 then version = 0 end
+
+  local existing = assignments[playerKey]
+  local changed = false
+  if type(existing) ~= "table" then
+    existing = {}
+    changed = true
+  end
+
+  if existing.group ~= groupName then changed = true end
+  if (existing.dbVersion or 0) ~= version and version ~= 0 then changed = true end
+  if (tonumber(existing.when) or 0) ~= when then changed = true end
+
+  existing.group = groupName
+  existing.when = when
+  if version ~= 0 then
+    existing.dbVersion = version
+  else
+    existing.dbVersion = tonumber(existing.dbVersion or existing.dbv) or 0
+  end
+  existing.dbv = nil
+
+  assignments[playerKey] = existing
+  return changed
+end
+
 function RepriseHC.GetDeathLog()
   return EnsureDb().deathLog
 end
@@ -473,6 +575,7 @@ Core:SetScript("OnEvent", function(_, event, arg1)
     local currentVersion = RepriseHC.GetDbVersion()
     RepriseHC.PruneAchievementsToVersion(currentVersion)
     RepriseHC.PruneDeathLogToVersion(currentVersion)
+    RepriseHC.PruneGroupAssignmentsToVersion(currentVersion)
   elseif event == "PLAYER_LOGIN" then
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
       C_ChatInfo.RegisterAddonMessagePrefix("RepriseHC_ACH")
