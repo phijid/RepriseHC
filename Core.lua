@@ -195,6 +195,12 @@ local function EnsureDb()
   elseif RepriseHCAchievementsDB.config.dbVersion > 0 and RepriseHCAchievementsDB.config.dbVersion < DEFAULT_DB_VERSION then
     RepriseHCAchievementsDB.config.dbVersion = DEFAULT_DB_VERSION
   end
+  if RepriseHCAchievementsDB.config.groupMinorVersion == nil then
+    RepriseHCAchievementsDB.config.groupMinorVersion = 0
+  end
+  if type(RepriseHCAchievementsDB.config.groupAssignmentMinor) ~= "table" then
+    RepriseHCAchievementsDB.config.groupAssignmentMinor = {}
+  end
   return RepriseHCAchievementsDB
 end
 
@@ -224,22 +230,47 @@ function RepriseHC.PruneGroupAssignmentsToVersion(version)
 
   local targetVersion = tonumber(version) or 0
   local removed = 0
+  local cfg = db.config or {}
+  cfg.groupAssignmentMinor = cfg.groupAssignmentMinor or {}
+  local minorByPlayer = cfg.groupAssignmentMinor
 
   for key, value in pairs(assignments) do
     local group, entryVersion, when = ExtractGroupAssignment(value)
+    local entryMinor = 0
+    if type(value) == "table" then
+      entryMinor = tonumber(value.groupVersion or value.groupMinor or value.gv) or 0
+    end
     if not group then
       assignments[key] = nil
+      minorByPlayer[key] = nil
       removed = removed + 1
     else
       if targetVersion ~= 0 then
         if entryVersion ~= 0 and entryVersion ~= targetVersion then
           assignments[key] = nil
+          minorByPlayer[key] = nil
           removed = removed + 1
         else
-          assignments[key] = { group = group, when = when, dbVersion = targetVersion }
+          assignments[key] = {
+            group = group,
+            when = when,
+            dbVersion = targetVersion,
+            groupVersion = entryMinor,
+          }
+          assignments[key].dbv = nil
+          assignments[key].gv = nil
+          minorByPlayer[key] = entryMinor
         end
       else
-        assignments[key] = { group = group, when = when, dbVersion = entryVersion >= 0 and entryVersion or 0 }
+        assignments[key] = {
+          group = group,
+          when = when,
+          dbVersion = entryVersion >= 0 and entryVersion or 0,
+          groupVersion = entryMinor,
+        }
+        assignments[key].dbv = nil
+        assignments[key].gv = nil
+        minorByPlayer[key] = entryMinor
       end
       local entry = assignments[key]
       if entry then entry.dbv = nil end
@@ -247,6 +278,53 @@ function RepriseHC.PruneGroupAssignmentsToVersion(version)
   end
 
   return removed
+end
+
+local function CurrentGroupMinorVersion()
+  local db = EnsureDb()
+  local value = tonumber(db.config.groupMinorVersion) or 0
+  if value < 0 then value = 0 end
+  db.config.groupMinorVersion = value
+  return value
+end
+
+function RepriseHC.GetGroupMinorVersion()
+  return CurrentGroupMinorVersion()
+end
+
+function RepriseHC.SetGroupMinorVersion(ver)
+  local value = tonumber(ver) or 0
+  if value < 0 then value = 0 end
+  value = math.floor(value)
+  local db = EnsureDb()
+  db.config.groupMinorVersion = value
+  return value
+end
+
+function RepriseHC.BumpGroupMinorVersion()
+  local current = CurrentGroupMinorVersion()
+  return RepriseHC.SetGroupMinorVersion(current + 1)
+end
+
+local function GetAssignmentMinor(playerKey)
+  if not playerKey then return 0 end
+  local db = EnsureDb()
+  local map = db.config.groupAssignmentMinor or {}
+  return tonumber(map[playerKey]) or 0
+end
+
+local function RememberAssignmentMinor(playerKey, minor)
+  if not playerKey then return end
+  local value = tonumber(minor) or 0
+  if value < 0 then value = 0 end
+  value = math.floor(value)
+  local db = EnsureDb()
+  db.config.groupAssignmentMinor = db.config.groupAssignmentMinor or {}
+  db.config.groupAssignmentMinor[playerKey] = value
+end
+
+function RepriseHC.GetGroupAssignmentMinor(playerKey)
+  return GetAssignmentMinor(playerKey)
 end
 
 function RepriseHC.UpdateGroupAssignment(playerKey, groupName, opts)
@@ -261,14 +339,6 @@ function RepriseHC.UpdateGroupAssignment(playerKey, groupName, opts)
     if groupName == "" then groupName = nil end
   end
 
-  if not groupName or groupName == "" then
-    if assignments[playerKey] ~= nil then
-      assignments[playerKey] = nil
-      return true
-    end
-    return false
-  end
-
   local when = tonumber(opts and (opts.when or opts.time))
   if not when or when <= 0 then
     when = GetServerTime and GetServerTime() or time()
@@ -280,7 +350,39 @@ function RepriseHC.UpdateGroupAssignment(playerKey, groupName, opts)
   end
   if version < 0 then version = 0 end
 
+  local incomingMinor = tonumber(opts and (opts.groupVersion or opts.groupMinor or opts.groupRevision or opts.gv)) or 0
+  if incomingMinor < 0 then incomingMinor = 0 end
+  incomingMinor = math.floor(incomingMinor)
+
+  local currentGlobalMinor = CurrentGroupMinorVersion()
   local existing = assignments[playerKey]
+  if type(existing) ~= "table" then existing = {} end
+  local existingMinor = tonumber(existing.groupVersion or existing.groupMinor or existing.gv) or 0
+  local recordedMinor = GetAssignmentMinor(playerKey)
+  if recordedMinor > existingMinor then existingMinor = recordedMinor end
+
+  if incomingMinor == 0 then
+    incomingMinor = currentGlobalMinor + 1
+  end
+
+  if incomingMinor < existingMinor then
+    return false, existingMinor
+  end
+
+  if incomingMinor > currentGlobalMinor then
+    RepriseHC.SetGroupMinorVersion(incomingMinor)
+  end
+
+  RememberAssignmentMinor(playerKey, incomingMinor)
+
+  if not groupName or groupName == "" then
+    if assignments[playerKey] ~= nil then
+      assignments[playerKey] = nil
+      return true, incomingMinor
+    end
+    return false, incomingMinor
+  end
+
   local changed = false
   if type(existing) ~= "table" then
     existing = {}
@@ -299,9 +401,12 @@ function RepriseHC.UpdateGroupAssignment(playerKey, groupName, opts)
     existing.dbVersion = tonumber(existing.dbVersion or existing.dbv) or 0
   end
   existing.dbv = nil
+  existing.groupVersion = incomingMinor
+  existing.groupMinor = nil
+  existing.gv = nil
 
   assignments[playerKey] = existing
-  return changed
+  return changed, incomingMinor
 end
 
 function RepriseHC.GetDeathLog()
@@ -469,6 +574,8 @@ local function HardResetDB(reason, newVersion, opts)
   db.groupAssignments = {}
   if db.config then
     db.config.selectedGroupKey = nil
+    db.config.groupMinorVersion = 0
+    db.config.groupAssignmentMinor = {}
   end
   RepriseHC.runtime = RepriseHC.runtime or {}
   RepriseHC.runtime.groupKey = nil

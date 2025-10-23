@@ -118,9 +118,9 @@ local function SetMyGroup(groupName)
   local stamp = (GetServerTime and GetServerTime()) or time()
   local version = CurrentDbVersion()
   if version and version <= 0 then version = nil end
-  local changed = true
+  local changed, minorVersion = true, nil
   if RepriseHC.UpdateGroupAssignment and playerKey then
-    changed = RepriseHC.UpdateGroupAssignment(playerKey, groupName, { when = stamp, dbVersion = version })
+    changed, minorVersion = RepriseHC.UpdateGroupAssignment(playerKey, groupName, { when = stamp, dbVersion = version })
   else
     db.groupAssignments[playerKey or "?"] = { group = groupName, when = stamp, dbVersion = version or 0 }
   end
@@ -139,6 +139,9 @@ local function SetMyGroup(groupName)
     if version then
       payload.dbVersion = version
       payload.dbv = version
+    end
+    if minorVersion and minorVersion > 0 then
+      payload.groupVersion = minorVersion
     end
     RepriseHC.Comm_Send("GROUP", payload)
   end

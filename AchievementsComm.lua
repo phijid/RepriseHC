@@ -127,6 +127,56 @@ local function CurrentDbVersion()
   return 0
 end
 
+local function CurrentGroupMinor()
+  if RepriseHC and RepriseHC.GetGroupMinorVersion then
+    local ok = tonumber(RepriseHC.GetGroupMinorVersion())
+    if ok and ok >= 0 then return ok end
+  end
+  local db = SafeDB()
+  if db and db.config then
+    local gv = tonumber(db.config.groupMinorVersion)
+    if gv and gv >= 0 then return gv end
+  end
+  return 0
+end
+
+local function AssignmentMinorFor(playerKey)
+  if RepriseHC and RepriseHC.GetGroupAssignmentMinor then
+    local ok = tonumber(RepriseHC.GetGroupAssignmentMinor(playerKey))
+    if ok and ok >= 0 then return ok end
+  end
+  local db = SafeDB()
+  local cfg = db.config or {}
+  local map = cfg.groupAssignmentMinor or {}
+  local gv = tonumber(map[playerKey])
+  if gv and gv >= 0 then return gv end
+  if type(db.groupAssignments) == "table" then
+    local entry = db.groupAssignments[playerKey]
+    if type(entry) == "table" then
+      local v = tonumber(entry.groupVersion or entry.groupMinor or entry.gv)
+      if v and v >= 0 then return v end
+    end
+  end
+  return 0
+end
+
+local function RememberAssignmentMinor(playerKey, minor)
+  if not playerKey then return end
+  local value = tonumber(minor) or 0
+  if value < 0 then value = 0 end
+  if RepriseHC and RepriseHC.GetGroupAssignmentMinor then
+    -- Core handles persistence when UpdateGroupAssignment is used.
+    if RepriseHC.UpdateGroupAssignment then
+      -- no-op; UpdateGroupAssignment already stored the minor
+      return
+    end
+  end
+  local db = SafeDB()
+  db.config = db.config or {}
+  db.config.groupAssignmentMinor = db.config.groupAssignmentMinor or {}
+  db.config.groupAssignmentMinor[playerKey] = math.floor(value)
+end
+
 local function EnsureDbVersion(ver)
   local version = tonumber(ver) or 0
   if RepriseHC and RepriseHC.SetDbVersion then
@@ -606,16 +656,20 @@ function BuildSnapshot()
   end
 
   local groupAssignmentsCopy = {}
+  local groupMinor = CurrentGroupMinor()
   for playerKey, entry in pairs(db.groupAssignments) do
     local groupName, entryVersion, when
+    local entryMinor = 0
     if type(entry) == "table" then
       groupName = entry.group or entry.name or entry.value
       entryVersion = tonumber(entry.dbVersion or entry.dbv) or dbVersion
       when = tonumber(entry.when or entry.time) or 0
+      entryMinor = tonumber(entry.groupVersion or entry.groupMinor or entry.gv) or AssignmentMinorFor(playerKey)
     elseif type(entry) == "string" then
       groupName = entry
       entryVersion = dbVersion ~= 0 and dbVersion or 0
       when = 0
+      entryMinor = AssignmentMinorFor(playerKey)
     end
     if groupName and groupName ~= "" then
       if dbVersion == 0 or entryVersion == 0 or entryVersion == dbVersion then
@@ -629,6 +683,11 @@ function BuildSnapshot()
           clone.dbVersion = entryVersion
         end
         clone.dbv = nil
+        if entryMinor and entryMinor > 0 then
+          clone.groupVersion = entryMinor
+        elseif groupMinor and groupMinor > 0 then
+          clone.groupVersion = groupMinor
+        end
         groupAssignmentsCopy[playerKey] = clone
       end
     end
@@ -641,6 +700,7 @@ function BuildSnapshot()
     guildFirsts = guildFirstsCopy,
     deathLog    = deathLogCopy,
     groupAssignments = groupAssignmentsCopy,
+    groupVersion = groupMinor,
     levelCap    = db.config.levelCap or RepriseHC.levelCap
   }
 end
@@ -799,6 +859,8 @@ local function ResetDbTablesToVersion(target)
   db.groupAssignments = {}
   db.config = db.config or {}
   db.config.dbVersion = target
+  db.config.groupMinorVersion = 0
+  db.config.groupAssignmentMinor = {}
 end
 
 AdoptIncomingVersion = function(version)
@@ -888,6 +950,8 @@ local function MergeSnapshot(p)
   if type(p) ~= "table" then return end
   local incomingVersion = tonumber(p.dbVersion) or tonumber(p.dbv) or 0
   local localVersion = CurrentDbVersion()
+  local incomingGroupMinor = tonumber(p.groupVersion or p.groupMinorVersion or p.groupMinor or p.gv) or 0
+  local localGroupMinor = CurrentGroupMinor()
 
   if incomingVersion == 0 then
     if localVersion ~= 0 then
@@ -933,6 +997,21 @@ local function MergeSnapshot(p)
   db.config = db.config or {}
   if localVersion ~= 0 or incomingVersion ~= 0 then
     db.config.dbVersion = localVersion ~= 0 and localVersion or incomingVersion
+  end
+
+  if incomingGroupMinor > 0 then
+    if incomingGroupMinor > localGroupMinor then
+      if RepriseHC and RepriseHC.SetGroupMinorVersion then
+        RepriseHC.SetGroupMinorVersion(incomingGroupMinor)
+      else
+        db.config.groupMinorVersion = incomingGroupMinor
+      end
+      localGroupMinor = incomingGroupMinor
+    elseif db.config.groupMinorVersion == nil then
+      db.config.groupMinorVersion = incomingGroupMinor
+    end
+  elseif db.config.groupMinorVersion == nil then
+    db.config.groupMinorVersion = localGroupMinor
   end
 
   PruneLocalDataToVersion(localVersion)
@@ -1046,10 +1125,13 @@ local function MergeSnapshot(p)
 
   for playerKey, info in pairs(p.groupAssignments or {}) do
     local groupName, entryVersion, when = nil, localVersion, 0
+    local entryMinor = incomingGroupMinor
     if type(info) == "table" then
       groupName = info.group or info.name or info.value
       entryVersion = tonumber(info.dbVersion or info.dbv) or localVersion
       when = tonumber(info.when or info.time) or 0
+      local m = tonumber(info.groupVersion or info.groupMinor or info.gv)
+      if m and m > 0 then entryMinor = m end
     elseif type(info) == "string" then
       groupName = info
       entryVersion = localVersion
@@ -1059,7 +1141,11 @@ local function MergeSnapshot(p)
     if groupName and groupName ~= "" then
       if localVersion == 0 or entryVersion == 0 or entryVersion == localVersion then
         if RepriseHC and RepriseHC.UpdateGroupAssignment then
-          local changedNow = RepriseHC.UpdateGroupAssignment(playerKey, groupName, { when = when, dbVersion = (localVersion ~= 0 and localVersion or entryVersion) })
+          local changedNow = RepriseHC.UpdateGroupAssignment(playerKey, groupName, {
+            when = when,
+            dbVersion = (localVersion ~= 0 and localVersion or entryVersion),
+            groupVersion = entryMinor,
+          })
           if changedNow then groupAssignmentsChanged = true end
         else
           local versionToUse = localVersion ~= 0 and localVersion or entryVersion
@@ -1067,19 +1153,36 @@ local function MergeSnapshot(p)
             group = groupName,
             when = when,
             dbVersion = versionToUse,
+            groupVersion = entryMinor,
           }
           db.groupAssignments[playerKey].dbv = nil
+          if entryMinor and entryMinor > 0 then
+            db.config = db.config or {}
+            local currentMinor = tonumber(db.config.groupMinorVersion) or 0
+            if entryMinor > currentMinor then
+              db.config.groupMinorVersion = entryMinor
+            end
+            RememberAssignmentMinor(playerKey, entryMinor)
+          end
           groupAssignmentsChanged = true
         end
       end
     else
       if RepriseHC and RepriseHC.UpdateGroupAssignment then
-        local changedNow = RepriseHC.UpdateGroupAssignment(playerKey, nil)
+        local changedNow = RepriseHC.UpdateGroupAssignment(playerKey, nil, { groupVersion = entryMinor })
         if changedNow then groupAssignmentsChanged = true end
       else
         if db.groupAssignments[playerKey] ~= nil then
           db.groupAssignments[playerKey] = nil
           groupAssignmentsChanged = true
+        end
+        if entryMinor and entryMinor > 0 then
+          db.config = db.config or {}
+          local currentMinor = tonumber(db.config.groupMinorVersion) or 0
+          if entryMinor > currentMinor then
+            db.config.groupMinorVersion = entryMinor
+          end
+          RememberAssignmentMinor(playerKey, entryMinor)
         end
       end
     end
@@ -1484,6 +1587,8 @@ local function HandleIncoming(prefix, payload, channel, sender)
     local when = tonumber(p.when or p.time) or time()
     local incomingVersion = tonumber(p.dbVersion or p.dbv) or CurrentDbVersion()
     if incomingVersion < 0 then incomingVersion = 0 end
+    local incomingGroupVersion = tonumber(p.groupVersion or p.groupMinor or p.gv) or 0
+    if incomingGroupVersion < 0 then incomingGroupVersion = 0 end
 
     local changed = false
     local db = SafeDB()
@@ -1491,23 +1596,44 @@ local function HandleIncoming(prefix, payload, channel, sender)
 
     if rawGroup then
       if RepriseHC and RepriseHC.UpdateGroupAssignment then
-        changed = RepriseHC.UpdateGroupAssignment(p.playerKey, rawGroup, { when = when, dbVersion = incomingVersion ~= 0 and incomingVersion or nil })
+        changed = RepriseHC.UpdateGroupAssignment(p.playerKey, rawGroup, {
+          when = when,
+          dbVersion = incomingVersion ~= 0 and incomingVersion or nil,
+          groupVersion = incomingGroupVersion,
+        })
       else
         db.groupAssignments[p.playerKey] = {
           group = rawGroup,
           when = when,
           dbVersion = incomingVersion,
+          groupVersion = incomingGroupVersion,
         }
         db.groupAssignments[p.playerKey].dbv = nil
+        if incomingGroupVersion and incomingGroupVersion > 0 then
+          db.config = db.config or {}
+          local currentMinor = tonumber(db.config.groupMinorVersion) or 0
+          if incomingGroupVersion > currentMinor then
+            db.config.groupMinorVersion = incomingGroupVersion
+          end
+          RememberAssignmentMinor(p.playerKey, incomingGroupVersion)
+        end
         changed = true
       end
     else
       if RepriseHC and RepriseHC.UpdateGroupAssignment then
-        changed = RepriseHC.UpdateGroupAssignment(p.playerKey, nil)
+        changed = RepriseHC.UpdateGroupAssignment(p.playerKey, nil, { groupVersion = incomingGroupVersion })
       else
         if db.groupAssignments[p.playerKey] ~= nil then
           db.groupAssignments[p.playerKey] = nil
           changed = true
+        end
+        if incomingGroupVersion and incomingGroupVersion > 0 then
+          db.config = db.config or {}
+          local currentMinor = tonumber(db.config.groupMinorVersion) or 0
+          if incomingGroupVersion > currentMinor then
+            db.config.groupMinorVersion = incomingGroupVersion
+          end
+          RememberAssignmentMinor(p.playerKey, incomingGroupVersion)
         end
       end
     end
