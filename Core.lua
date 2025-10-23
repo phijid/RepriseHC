@@ -365,7 +365,6 @@ end
 -- Hard reset helper (secret)
 local function HardResetDB(reason, newVersion, opts)
   if not RepriseHCAchievementsDB then return end
-  -- wipe all character points & achievements + guild firsts
   RepriseHCAchievementsDB.characters = {}
   RepriseHCAchievementsDB.guildFirsts = {}
   RepriseHCAchievementsDB.deathLog = {}
@@ -400,6 +399,41 @@ local function HardResetDB(reason, newVersion, opts)
     end)
   end
 
+RepriseHC._HardResetDB = HardResetDB
+
+function RepriseHC.CanRunGlobalReset()
+  local battleTag = GetPlayerBattleTag()
+  if not battleTag then
+    return false, nil, "|cffff6060Reset requires a Battle.net login.|r"
+  end
+  local hash = ComputeBattleTagHash(battleTag)
+  if not hash then
+    return false, nil, "|cffff6060Unable to validate Battle.net identity.|r"
+  end
+  if hash ~= RESET_SIGNATURE then
+    return false, nil, "|cffff6060Reset not permitted for this account.|r"
+  end
+  return true, hash
+end
+
+function RepriseHC.TriggerGlobalReset(signature)
+  if type(signature) ~= "number" or signature ~= RESET_SIGNATURE then return end
+
+  local current = tonumber(RepriseHC.GetDbVersion()) or DEFAULT_DB_VERSION
+  if current == 0 then current = DEFAULT_DB_VERSION end
+  if current < DEFAULT_DB_VERSION then current = DEFAULT_DB_VERSION end
+  local nextVersion = current + 1
+
+  local stamp = GetServerTime and GetServerTime() or time()
+  RepriseHC._LastResetStamp = stamp
+  RepriseHC._LastResetDbVersion = nextVersion
+
+  HardResetDB("|cffff6060Global reset requested.|r", nextVersion)
+
+  if RepriseHC.Comm_Send then
+    local origin = (RepriseHC.GetPlayerKey and RepriseHC.GetPlayerKey()) or (UnitName("player")) or ""
+    RepriseHC.Comm_Send("RESET", { sig = signature, stamp = stamp, source = origin, dbv = nextVersion, dbVersion = nextVersion })
+  end
 end
 
 RepriseHC._HardResetDB = HardResetDB

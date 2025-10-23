@@ -823,6 +823,14 @@ local function MergeSnapshot(p)
     if fb and not seenFallback[fb] then
       seenFallback[fb] = entry
     end
+    local fb = fallbackKey(entry)
+    if fb and not seenFallback[fb] then
+      seenFallback[fb] = entry
+    end
+  end
+
+  for _, existing in ipairs(db.deathLog) do
+    markSeen(existing)
   end
 
   for _, existing in ipairs(db.deathLog) do
