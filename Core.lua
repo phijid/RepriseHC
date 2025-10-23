@@ -256,7 +256,6 @@ end
 -- Hard reset helper (secret)
 local function HardResetDB(reason, newVersion, opts)
   if not RepriseHCAchievementsDB then return end
-  -- wipe all character points & achievements + guild firsts
   RepriseHCAchievementsDB.characters = {}
   RepriseHCAchievementsDB.guildFirsts = {}
   RepriseHCAchievementsDB.deathLog = {}
