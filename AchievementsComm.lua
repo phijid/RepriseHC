@@ -12,7 +12,12 @@ local lastSnapshotBroadcastAt = 0
 local lastSnapshotRequestAt = 0
 local lastGuildSyncAt = 0
 local PERIODIC_SYNC_INTERVAL = 60
+local targetedSnapshotSentAt = {}
+local knownOnlineGuildmates = {}
+local TARGETED_SNAPSHOT_MIN_INTERVAL = 30
+local TARGETED_SNAPSHOT_REFRESH = 180
 local SendSnapshotPayload
+local MaybeSendTargetedSnapshot
 local AdoptIncomingVersion
 local DIRECT_ADDON_MAX = 240
 
@@ -714,6 +719,77 @@ local function SendSmallSnapshot()
 end
 
 local lastResetSentTo = {}
+
+MaybeSendTargetedSnapshot = function(name, reason)
+  if not name or name == "" then return end
+  if IsSelf(name) then return end
+
+  local short = CanonicalShort(name)
+  if short == "" then return end
+
+  local now = Now()
+  local previous = targetedSnapshotSentAt[short] or 0
+  if now - previous < TARGETED_SNAPSHOT_MIN_INTERVAL then return end
+
+  targetedSnapshotSentAt[short] = now
+
+  local function doSend()
+    local payload = { kind = "SNAP", data = BuildSnapshot() }
+    if reason then payload.reason = reason end
+    local ok = SendSnapshotPayload(payload, name)
+    if not ok then
+      targetedSnapshotSentAt[short] = previous
+    end
+  end
+
+  if C_Timer and C_Timer.After then
+    C_Timer.After(0.5, doSend)
+  else
+    doSend()
+  end
+end
+
+local function UpdateRosterSnapshots()
+  if not IsInGuild or not IsInGuild() then
+    if knownOnlineGuildmates then
+      wipe(knownOnlineGuildmates)
+    end
+    return
+  end
+
+  local count = GetNumGuildMembers and GetNumGuildMembers() or 0
+  if count <= 0 then return end
+
+  local now = Now()
+  local seen = {}
+
+  for i = 1, count do
+    local name, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
+    if name then
+      local short = CanonicalShort(name)
+      if short ~= "" then
+        seen[short] = online and name or false
+        if online and not IsSelf(name) then
+          local lastSent = targetedSnapshotSentAt[short] or 0
+          if not knownOnlineGuildmates[short] then
+            MaybeSendTargetedSnapshot(name, "rosterNew")
+          elseif now - lastSent > TARGETED_SNAPSHOT_REFRESH then
+            MaybeSendTargetedSnapshot(name, "rosterRefresh")
+          end
+          knownOnlineGuildmates[short] = name
+        end
+      end
+    end
+  end
+
+  for short in pairs(knownOnlineGuildmates) do
+    local state = seen[short]
+    if not state or state == false then
+      knownOnlineGuildmates[short] = nil
+      targetedSnapshotSentAt[short] = nil
+    end
+  end
+end
 
 local function ResetDbTablesToVersion(target)
   local db = SafeDB()
@@ -1607,6 +1683,7 @@ end
 
 -- -------- startup & retries --------
 local F = CreateFrame("Frame")
+F:RegisterEvent("PLAYER_LOGIN")
 F:RegisterEvent("PLAYER_ENTERING_WORLD")
 F:RegisterEvent("PLAYER_GUILD_UPDATE")
 F:RegisterEvent("GUILD_ROSTER_UPDATE")
@@ -1619,7 +1696,13 @@ end
 local wasInGuild
 
 F:SetScript("OnEvent", function(_, ev)
-  if ev == "PLAYER_ENTERING_WORLD" then
+  if ev == "PLAYER_LOGIN" then
+    if knownOnlineGuildmates then
+      wipe(knownOnlineGuildmates)
+    end
+    UpdateRosterSnapshots()
+
+  elseif ev == "PLAYER_ENTERING_WORLD" then
     PruneLocalDataForCurrentVersion()
     haveSnapshot = false
     C_Timer.After(5,  requestWithBackoff)
@@ -1634,6 +1717,7 @@ F:SetScript("OnEvent", function(_, ev)
       C_Timer.After(PERIODIC_SYNC_INTERVAL, periodic)
     end
     C_Timer.After(20, periodic)
+    C_Timer.After(10, UpdateRosterSnapshots)
 
   elseif ev == "PLAYER_GUILD_UPDATE" or ev == "GUILD_ROSTER_UPDATE" then
     local inGuild = IsInGuild and IsInGuild()
@@ -1641,6 +1725,11 @@ F:SetScript("OnEvent", function(_, ev)
     if inGuild then
       local force = not wasInGuild
       GuildSync(force, force and "joinedGuild" or "guildUpdate")
+      UpdateRosterSnapshots()
+    else
+      if knownOnlineGuildmates then
+        wipe(knownOnlineGuildmates)
+      end
     end
     wasInGuild = inGuild
     if not haveSnapshot then C_Timer.After(2, requestWithBackoff) end
