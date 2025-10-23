@@ -924,6 +924,9 @@ local function MergeSnapshot(p)
     if providedGlobalCopyAlias then
       _G.copy = existingGlobalCopy
     end
+    if match then
+      appendEntry(match)
+    end
   end
   for _, raw in pairs(incoming) do
     local entry = cloneDeathEntry(raw)
@@ -933,30 +936,6 @@ local function MergeSnapshot(p)
       if norm ~= "" then
         stagedByNorm[norm] = entry
       end
-    else
-      local fb = fallbackKey(entry)
-      local dest = fb and seenFallback[fb] or nil
-      if dest then
-        for k, v in pairs(entry) do
-          if v ~= nil and v ~= "" then
-            dest[k] = v
-          end
-        end
-        if localVersion ~= 0 then
-          dest.dbVersion = localVersion
-        end
-      else
-        appendEntry(entry)
-      end
-    end
-  end
-
-  -- Ensure our own death record is restored when peers still have it.
-  local myNormKey
-  if RepriseHC and RepriseHC.PlayerKey then
-    local selfKey = RepriseHC.PlayerKey()
-    if selfKey and selfKey ~= "" then
-      myNormKey = selfKey:lower():gsub("%-.*$", "")
     end
   end
 
@@ -1406,6 +1385,16 @@ function RepriseHC.Comm_Send(topic, payloadTable)
   local usedGroup = false
   if not usedGuild then
     usedGroup = SendViaGroup(wire)
+  end
+
+  if topic ~= "DEATH" and not usedGuild and not usedGroup then
+    local peers = 6
+    if topic == "REQSNAP" then
+      peers = 4
+    elseif topic == "GROUP" then
+      peers = 5
+    end
+    SendWhisperFallback(wire, peers)
   end
 
   if topic == "DEATH" then
