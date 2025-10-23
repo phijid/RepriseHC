@@ -283,6 +283,64 @@ local function HardResetDB(reason, newVersion, opts)
     end)
   end
 
+function RepriseHC.CanRunGlobalReset()
+  local battleTag = GetPlayerBattleTag()
+  if not battleTag then
+    return false, nil, "|cffff6060Reset requires a Battle.net login.|r"
+  end
+  local hash = ComputeBattleTagHash(battleTag)
+  if not hash then
+    return false, nil, "|cffff6060Unable to validate Battle.net identity.|r"
+  end
+  if hash ~= RESET_SIGNATURE then
+    return false, nil, "|cffff6060Reset not permitted for this account.|r"
+  end
+  return true, hash
+end
+
+function RepriseHC.TriggerGlobalReset(signature)
+  if type(signature) ~= "number" or signature ~= RESET_SIGNATURE then return end
+
+  local stamp = GetServerTime and GetServerTime() or time()
+  RepriseHC._LastResetStamp = stamp
+
+  HardResetDB("|cffff6060Global reset requested.|r", stamp)
+
+  if RepriseHC.Comm_Send then
+    local origin = RepriseHC.GetPlayerKey and RepriseHC.GetPlayerKey() or UnitName("player") or ""
+    RepriseHC.Comm_Send("RESET", { sig = signature, stamp = stamp, source = origin, dbv = stamp })
+  end
+end
+
+RepriseHC._HardResetDB = HardResetDB
+
+function RepriseHC.CanRunGlobalReset()
+  local battleTag = GetPlayerBattleTag()
+  if not battleTag then
+    return false, nil, "|cffff6060Reset requires a Battle.net login.|r"
+  end
+  local hash = ComputeBattleTagHash(battleTag)
+  if not hash then
+    return false, nil, "|cffff6060Unable to validate Battle.net identity.|r"
+  end
+  if hash ~= RESET_SIGNATURE then
+    return false, nil, "|cffff6060Reset not permitted for this account.|r"
+  end
+  return true, hash
+end
+
+function RepriseHC.TriggerGlobalReset(signature)
+  if type(signature) ~= "number" or signature ~= RESET_SIGNATURE then return end
+
+  local stamp = GetServerTime and GetServerTime() or time()
+  RepriseHC._LastResetStamp = stamp
+
+  HardResetDB("|cffff6060Global reset requested.|r")
+
+  if RepriseHC.Comm_Send then
+    local origin = RepriseHC.GetPlayerKey and RepriseHC.GetPlayerKey() or UnitName("player") or ""
+    RepriseHC.Comm_Send("RESET", { sig = signature, stamp = stamp, source = origin })
+  end
 end
 
 RepriseHC._HardResetDB = HardResetDB
