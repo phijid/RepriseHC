@@ -1022,6 +1022,29 @@ local function MergeSnapshot(p)
       else
         appendEntry(entry)
       end
+      cloned.dbVersion = entryVersion
+      cloned.dbv = nil
+    else
+      cloned.dbVersion = tonumber(cloned.dbVersion or cloned.dbv) or 0
+      cloned.dbv = nil
+    end
+    return cloned
+  end
+
+  local staged, stagedByNorm = {}, {}
+  local copy = stagedByNorm -- backwards compat for older local naming
+  -- Some legacy builds referenced a local "copy" table when staging snapshot
+  -- entries. Preserve a temporary alias so any outstanding references resolve
+  -- to the same staging map instead of a nil global.
+  local existingGlobalCopy = rawget(_G, "copy")
+  local providedGlobalCopyAlias = false
+  if existingGlobalCopy == nil then
+    _G.copy = stagedByNorm
+    providedGlobalCopyAlias = true
+  end
+  local function releaseCopyAlias()
+    if providedGlobalCopyAlias then
+      _G.copy = existingGlobalCopy
     end
   end
 
