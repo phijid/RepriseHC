@@ -411,10 +411,19 @@ end
 
 function RepriseHC.SetDbVersion(ver)
   local db = EnsureDb()
+  local previous = tonumber(db.config and db.config.dbVersion) or 0
   if ver == 0 then
     db.config.dbVersion = 0
   else
     db.config.dbVersion = NormalizeDbVersion(ver)
+  end
+  local current = tonumber(db.config.dbVersion) or 0
+  if current ~= previous then
+    if db.config then
+      db.config.selectedGroupKey = nil
+    end
+    RepriseHC.runtime = RepriseHC.runtime or {}
+    RepriseHC.runtime.groupKey = nil
   end
 end
 
@@ -457,6 +466,11 @@ local function HardResetDB(reason, newVersion, opts)
   db.guildFirsts = {}
   db.deathLog = {}
   db.groupAssignments = {}
+  if db.config then
+    db.config.selectedGroupKey = nil
+  end
+  RepriseHC.runtime = RepriseHC.runtime or {}
+  RepriseHC.runtime.groupKey = nil
   if newVersion ~= nil then
     if newVersion == 0 then
       db.config.dbVersion = 0
@@ -601,7 +615,28 @@ SlashCmdList["REPRISEHC"] = function(msg)
     RepriseHC.Print("Trade, mail, auction house protection disabled.")
   elseif lower == "reload" then
     if RepriseHC.RebuildGuildCache then RepriseHC.RebuildGuildCache() end
-    RepriseHC.Print("Guild roster refreshed.")
+    local requestedSync = false
+    if RepriseHC.Comm_RequestSnapshot then
+      requestedSync = RepriseHC.Comm_RequestSnapshot() or requestedSync
+    elseif RepriseHC.Comm_Send then
+      RepriseHC.Comm_Send("REQSNAP", { need="all" })
+      requestedSync = true
+    end
+    if RepriseHC.Comm_BroadcastSnapshot then
+      requestedSync = RepriseHC.Comm_BroadcastSnapshot() or requestedSync
+    elseif RepriseHC.Comm_Send then
+      local builder = RepriseHC.Comm_BuildSnapshot
+      local snapshot = builder and builder()
+      if snapshot then
+        RepriseHC.Comm_Send("SNAP", { kind="SNAP", data = snapshot })
+        requestedSync = true
+      end
+    end
+    if requestedSync then
+      RepriseHC.Print("Guild roster refreshed. Sync requested.")
+    else
+      RepriseHC.Print("Guild roster refreshed.")
+    end
   elseif lower == "dbv" then
     local ver = RepriseHC.GetDbVersion()
     RepriseHC.Print(("Current database version: |cff40ff40%d|r"):format(ver))
