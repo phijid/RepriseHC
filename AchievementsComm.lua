@@ -641,7 +641,13 @@ local function MergeSnapshot(p)
       if norm ~= "" then
         stagedByNorm[norm] = entry
       end
+      copy.dbVersion = entryVersion
+      copy.dbv = nil
+    else
+      copy.dbVersion = tonumber(copy.dbVersion or copy.dbv) or 0
+      copy.dbv = nil
     end
+    return copy
   end
 
   if #staged == 0 then
