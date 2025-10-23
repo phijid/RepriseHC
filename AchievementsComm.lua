@@ -649,6 +649,9 @@ SendSnapshotPayload = function(payloadTable, target)
     if payloadTable.dbVersion == nil then
       payloadTable.dbVersion = 0
     end
+    if payloadTable.dbVersion == nil then
+      payloadTable.dbVersion = 0
+    end
   end
   local wire = BuildWire("SNAP", payloadTable)
   if not wire or wire == "" then return false end

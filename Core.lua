@@ -490,6 +490,11 @@ local function HardResetDB(reason, newVersion, opts)
   if not (opts and opts.skipPrint) then
     RepriseHC.Print(msg)
   end
+  if RepriseHC.PrimeProfessionBaseline then
+    C_Timer.After(0, function()
+      RepriseHC.PrimeProfessionBaseline()
+    end)
+  end
   if not (opts and opts.skipRefresh) then
     C_Timer.After(0, function()
       if RepriseHC_UI and RepriseHC_UI:IsShown() then

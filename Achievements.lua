@@ -252,26 +252,57 @@ function RepriseHC.Ach_AwardLevelsUpTo(level)
   end  
 end
 
-function RepriseHC.Ach_CheckProfessions()
-  if not (RepriseHC.navigation.prof.enabled) then return end 
-  if not RepriseHC.IsGuildAllowed() then return end
-
-  local num = GetNumSkillLines and GetNumSkillLines() or 0
+local function CollectProfessionRanks()
   local ranks = {}
-  for i=1,num do
+  local num = GetNumSkillLines and GetNumSkillLines() or 0
+  for i = 1, num do
     local name, isHeader, _, skillRank = GetSkillLineInfo(i)
     if name and not isHeader and RepriseHC.professions[name] then
       ranks[name] = math.max(ranks[name] or 0, skillRank or 0)
     end
   end
-  for skill,_ in pairs(RepriseHC.professions) do
-    local r = ranks[skill] or 0
-    for _,th in ipairs(RepriseHC.profThreshold) do
-      if th.levelRequirement <= RepriseHC.levelCap and r >= th.threshold then
-        local id = skill.."_"..th.threshold
+  return ranks
+end
+
+local lastProfessionRanks = nil
+
+local function UpdateProfessionBaseline()
+  lastProfessionRanks = CollectProfessionRanks()
+end
+
+function RepriseHC.PrimeProfessionBaseline()
+  UpdateProfessionBaseline()
+end
+
+local function ShouldForceProfessionAward(opts)
+  if opts == true then return true end
+  if type(opts) == "table" then
+    return opts.force == true
+  end
+  return false
+end
+
+function RepriseHC.Ach_CheckProfessions(opts)
+  if not (RepriseHC.navigation.prof.enabled) then return end
+  if not RepriseHC.IsGuildAllowed() then return end
+
+  if not lastProfessionRanks then
+    UpdateProfessionBaseline()
+  end
+
+  local force = ShouldForceProfessionAward(opts)
+  local ranks = CollectProfessionRanks()
+  local previous = lastProfessionRanks or {}
+
+  for skill, _ in pairs(RepriseHC.professions) do
+    local newRank = ranks[skill] or 0
+    local oldRank = previous[skill] or 0
+    for _, th in ipairs(RepriseHC.profThreshold) do
+      if th.levelRequirement <= RepriseHC.levelCap and newRank >= th.threshold and (force or oldRank < th.threshold) then
+        local id = skill .. "_" .. th.threshold
         local title = (th.threshold==75 and "Apprentice") or (th.threshold==150 and "Journeyman") or (th.threshold==225 and "Expert") or "Artisan"
         local pts = (th.threshold==75 and 15) or (th.threshold==150 and 30) or (th.threshold==225 and 45) or 60
-        local nm = skill.." "..title
+        local nm = skill .. " " .. title
         if EarnAchievement(id, nm, pts) then
           local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format(nm, pts)
           Print(msg)
@@ -283,6 +314,8 @@ function RepriseHC.Ach_CheckProfessions()
       end
     end
   end
+
+  lastProfessionRanks = ranks
 end
 
 -- ========= Speedrun (Hardcore-style) =========
@@ -708,11 +741,14 @@ local function __RHC_Ach_OnEvent(event, ...)
   if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
     C_Timer.After(0, function() UpdateInstanceState() end)
     C_Timer.After(1.0, function()
+      if RepriseHC.PrimeProfessionBaseline then
+        RepriseHC.PrimeProfessionBaseline()
+      end
       if RepriseHC.IsGuildAllowed and RepriseHC.IsGuildAllowed() then
         if RepriseHC.AchievementTesting then
           local level = UnitLevel("player") or 1
           if RepriseHC.Ach_AwardLevelsUpTo then RepriseHC.Ach_AwardLevelsUpTo(level) end
-          if RepriseHC.Ach_CheckProfessions then RepriseHC.Ach_CheckProfessions() end
+          if RepriseHC.Ach_CheckProfessions then RepriseHC.Ach_CheckProfessions(true) end
           if level >= RepriseHC.levelCap and RepriseHC.Ach_TryGuildFirsts then RepriseHC.Ach_TryGuildFirsts() end
           if RepriseHC.Ach_CheckSpeedrunOnDing then RepriseHC.Ach_CheckSpeedrunOnDing(math.floor(level / 10) * 10) end
         end
