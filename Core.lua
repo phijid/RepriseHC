@@ -1,9 +1,9 @@
-RepriseHC = {}
+RepriseHC = RepriseHC or {}
 RepriseHC.name = "RepriseHC"
 RepriseHC.version = "0.2.0a"
 RepriseHC.allowedGuilds = { ["Reprise"] = true, ["RepriseHC"] = true, ["Frontier"] = true, ["Midnight Guardians"] = true }
 
--- ===== Useful to be global ===== 
+local DEFAULT_DB_VERSION = 1
 
 local DEFAULT_DB_VERSION = 1
 
@@ -11,16 +11,15 @@ RepriseHC.levelCap = 20
 RepriseHC.levels = {10,20,30,40,50,60}
 RepriseHC.showToGuild = true
 RepriseHC.runtime = RepriseHC.runtime or {}
-
 RepriseHC.defaultDbVersion = DEFAULT_DB_VERSION
 
 RepriseHC.speedrunThresholds = {
-  [10] = 2,   -- reach 10 under 2 hours
-  [20] = 12,  -- reach 20 under 12 hours
-  [30] = 27,  -- reach 30 under 27 hours
-  [40] = 50,  -- reach 40 under 50 hours
-  [50] = 81,  -- reach 50 under 81 hours
-  [60] = 120, -- reach 60 under 120 hours
+  [10] = 2,
+  [20] = 12,
+  [30] = 27,
+  [40] = 50,
+  [50] = 81,
+  [60] = 120,
 }
 
 RepriseHC.class = {
@@ -40,7 +39,7 @@ RepriseHC.race  = {
   Gnome     = { name="Gnome",     faction="Alliance" },
   Dwarf     = { name="Dwarf",     faction="Alliance" },
   ["Night Elf"] = { name="Night Elf", faction="Alliance" },
-  NightElf  = { name="Night Elf", faction="Alliance" }, 
+  NightElf  = { name="Night Elf", faction="Alliance" },
   Orc       = { name="Orc",       faction="Horde" },
   Troll     = { name="Troll",     faction="Horde" },
   Scourge   = { name="Undead",    faction="Horde" },
@@ -49,21 +48,19 @@ RepriseHC.race  = {
 }
 
 RepriseHC.professions = {
-  ["Alchemy"]=true, 
-  ["Blacksmithing"]=true, 
-  ["Leatherworking"]=true, 
+  ["Alchemy"]=true,
+  ["Blacksmithing"]=true,
+  ["Leatherworking"]=true,
   ["Tailoring"]=true,
-  ["Engineering"]=true, 
-  ["Enchanting"]=true, 
-  ["Herbalism"]=true, 
-  ["Mining"]=true, 
+  ["Engineering"]=true,
+  ["Enchanting"]=true,
+  ["Herbalism"]=true,
+  ["Mining"]=true,
   ["Skinning"]=true,
-  ["Cooking"]=true, 
-  ["First Aid"]=true, 
+  ["Cooking"]=true,
+  ["First Aid"]=true,
   ["Fishing"]=true,
 }
-
--- RepriseHC.profThreshold = {75,150,225,300}
 
 RepriseHC.profThreshold = {
   { levelRequirement = 5,  threshold = 75 },
@@ -84,20 +81,17 @@ RepriseHC.navigation = {
   deathlog    = { label="Death Log", enabled=true },
 }
 
---Fuck it ill figure this out later, ipairs and pairs are stupid -_- 
-RepriseHC.navigationOrder = { 
-  "leaderboard", 
+RepriseHC.navigationOrder = {
+  "leaderboard",
   "standing",
-  "level", 
-  "speedrun", 
-  "quest", 
-  "prof", 
-  "dungeons", 
-  "guildFirst", 
-  "deathlog"
- }
-
--- ===============================
+  "level",
+  "speedrun",
+  "quest",
+  "prof",
+  "dungeons",
+  "guildFirst",
+  "deathlog",
+}
 
 local Core = CreateFrame("Frame", "RepriseHC_Core")
 Core:RegisterEvent("ADDON_LOADED")
@@ -109,8 +103,8 @@ end
 
 local RESET_SALT = "RepriseHC_ResetSalt_v1"
 local RESET_HASH_BASE = 131
-local RESET_HASH_MOD  = 2147483647 -- 2^31-1, fits within Lua number precision
-local RESET_SIGNATURE = 1740334091 -- Hash for salt + Subarashii#11931
+local RESET_HASH_MOD  = 2147483647
+local RESET_SIGNATURE = 1740334091
 
 RepriseHC._ResetSignature = RESET_SIGNATURE
 
@@ -139,17 +133,15 @@ end
 function RepriseHC.GetPlayerKey()
   local name, realm = UnitName("player")
   realm = realm or GetRealmName()
-  return name .. "-" .. realm
+  return string.format("%s-%s", name or "", realm or "")
 end
 
 function RepriseHC.IsGuildAllowed()
   local g = GetGuildInfo("player")
-
   if not g then
     return true
   end
-
-  return g and RepriseHC.allowedGuilds[g] or false
+  return not not RepriseHC.allowedGuilds[g]
 end
 
 function RepriseHC.GetLevelCap()
@@ -163,28 +155,25 @@ end
 function RepriseHC.MaxMilestone()
   local cap = RepriseHC.levelCap or 60
   return math.floor(math.max(0, cap) / 10) * 10
-end 
+end
 
--- Helpers to read display names
 function RepriseHC.ClassName(eclass)
   local v = RepriseHC.class[eclass or ""]
-  if type(v)=="table" then return v.name end
+  if type(v) == "table" then return v.name end
   return v or eclass or "Class"
 end
 
 function RepriseHC.RaceName(erace)
   local v = RepriseHC.race[erace or ""]
-  if type(v)=="table" then return v.name end
+  if type(v) == "table" then return v.name end
   return v or erace or "Race"
 end
 
 function RepriseHC.GetSelectedGroupKey()
-  -- always prefer persisted value
   local cfg = RepriseHCAchievementsDB and RepriseHCAchievementsDB.config
   if cfg and cfg.selectedGroupKey ~= nil then
     return cfg.selectedGroupKey
   end
-  -- fallback to runtime cache
   return RepriseHC.runtime.groupKey
 end
 
@@ -195,33 +184,43 @@ function RepriseHC.SetSelectedGroupKey(key)
   RepriseHC.runtime.groupKey = key
 end
 
--- Make the single source of truth for the death log the DB
-function RepriseHC.GetDeathLog()
+local function EnsureDb()
   RepriseHCAchievementsDB = RepriseHCAchievementsDB or {}
+  RepriseHCAchievementsDB.characters = RepriseHCAchievementsDB.characters or {}
+  RepriseHCAchievementsDB.guildFirsts = RepriseHCAchievementsDB.guildFirsts or {}
   RepriseHCAchievementsDB.deathLog = RepriseHCAchievementsDB.deathLog or {}
-  return RepriseHCAchievementsDB.deathLog
+  RepriseHCAchievementsDB.groupAssignments = RepriseHCAchievementsDB.groupAssignments or {}
+  RepriseHCAchievementsDB.config = RepriseHCAchievementsDB.config or {}
+  if RepriseHCAchievementsDB.config.dbVersion == nil then
+    RepriseHCAchievementsDB.config.dbVersion = DEFAULT_DB_VERSION
+  elseif RepriseHCAchievementsDB.config.dbVersion > 0 and RepriseHCAchievementsDB.config.dbVersion < DEFAULT_DB_VERSION then
+    RepriseHCAchievementsDB.config.dbVersion = DEFAULT_DB_VERSION
+  end
+  return RepriseHCAchievementsDB
 end
 
--- If you append to the death log anywhere, use this
+function RepriseHC.DB()
+  return EnsureDb()
+end
+
+function RepriseHC.GetDeathLog()
+  return EnsureDb().deathLog
+end
+
 function RepriseHC.PushDeath(entry)
   if not entry then return end
-  local dl = RepriseHC.GetDeathLog()
-  if entry.dbVersion == nil then
-    local version = entry.dbv or (RepriseHC.GetDbVersion and RepriseHC.GetDbVersion()) or 0
-    entry.dbVersion = version
-    entry.dbv = nil
-  end
-  dl[#dl+1] = entry
+  local version = entry.dbVersion or entry.dbv or RepriseHC.GetDbVersion()
+  entry.dbVersion = version
+  entry.dbv = nil
+  local log = EnsureDb().deathLog
+  log[#log + 1] = entry
 end
 
 local function NormalizeCharacterAchievements(entry, targetVersion)
   if type(entry) ~= "table" then return 0, 0 end
-
   entry.achievements = entry.achievements or {}
-
   local removed, totalPoints = 0, 0
   local desiredVersion = tonumber(targetVersion) or 0
-
   for id, ach in pairs(entry.achievements) do
     if type(ach) ~= "table" then
       entry.achievements[id] = nil
@@ -233,9 +232,10 @@ local function NormalizeCharacterAchievements(entry, targetVersion)
         removed = removed + 1
       else
         if desiredVersion ~= 0 then
-          achVersion = desiredVersion
+          ach.dbVersion = desiredVersion
+        else
+          ach.dbVersion = achVersion
         end
-        ach.dbVersion = achVersion
         ach.dbv = nil
         ach.points = tonumber(ach.points) or 0
         ach.when = tonumber(ach.when) or 0
@@ -243,9 +243,7 @@ local function NormalizeCharacterAchievements(entry, targetVersion)
       end
     end
   end
-
   entry.points = totalPoints
-
   if desiredVersion ~= 0 then
     entry.dbVersion = desiredVersion
   else
@@ -253,29 +251,21 @@ local function NormalizeCharacterAchievements(entry, targetVersion)
     entry.dbVersion = current
   end
   entry.dbv = nil
-
   return removed, totalPoints
 end
 
 RepriseHC.NormalizeCharacterAchievements = NormalizeCharacterAchievements
 
 function RepriseHC.PruneAchievementsToVersion(version)
-  local db = RepriseHC.DB and RepriseHC.DB()
-  if not db then return 0 end
-
-  db.characters = db.characters or {}
-  db.guildFirsts = db.guildFirsts or {}
-
+  local db = EnsureDb()
   local targetVersion = tonumber(version) or 0
   local removed = 0
-
   for _, entry in pairs(db.characters) do
     local pruned = NormalizeCharacterAchievements(entry, targetVersion)
     if pruned and pruned > 0 then
       removed = removed + pruned
     end
   end
-
   for id, info in pairs(db.guildFirsts) do
     local entryVersion = tonumber(info and (info.dbVersion or info.dbv)) or 0
     if targetVersion ~= 0 and entryVersion ~= targetVersion then
@@ -291,7 +281,6 @@ function RepriseHC.PruneAchievementsToVersion(version)
       info.when = tonumber(info.when) or 0
     end
   end
-
   return removed
 end
 
@@ -306,40 +295,36 @@ local function NormalizeDbVersion(ver)
 end
 
 function RepriseHC.GetDbVersion()
-  if not RepriseHCAchievementsDB then return DEFAULT_DB_VERSION end
-  local cfg = RepriseHCAchievementsDB.config
-  if not cfg then return DEFAULT_DB_VERSION end
-  local current = tonumber(cfg.dbVersion)
+  local db = EnsureDb()
+  local current = tonumber(db.config.dbVersion)
   if not current then
-    cfg.dbVersion = DEFAULT_DB_VERSION
+    db.config.dbVersion = DEFAULT_DB_VERSION
     return DEFAULT_DB_VERSION
   end
   if current == 0 then return 0 end
   if current < DEFAULT_DB_VERSION then
-    cfg.dbVersion = DEFAULT_DB_VERSION
+    db.config.dbVersion = DEFAULT_DB_VERSION
     return DEFAULT_DB_VERSION
   end
   return current
 end
 
 function RepriseHC.SetDbVersion(ver)
-  RepriseHCAchievementsDB = RepriseHCAchievementsDB or {}
-  RepriseHCAchievementsDB.config = RepriseHCAchievementsDB.config or {}
+  local db = EnsureDb()
   if ver == 0 then
-    RepriseHCAchievementsDB.config.dbVersion = 0
-    return
+    db.config.dbVersion = 0
+  else
+    db.config.dbVersion = NormalizeDbVersion(ver)
   end
-  RepriseHCAchievementsDB.config.dbVersion = NormalizeDbVersion(ver)
 end
 
 function RepriseHC.PruneDeathLogToVersion(version)
-  local db = RepriseHC.DB and RepriseHC.DB()
-  if not db or not db.deathLog then return 0 end
-
+  local db = EnsureDb()
+  local log = db.deathLog
+  if not log then return 0 end
   local targetVersion = tonumber(version) or 0
   local keep, removed = {}, 0
-
-  for _, entry in ipairs(db.deathLog) do
+  for _, entry in ipairs(log) do
     local entryVersion = tonumber(entry and (entry.dbVersion or entry.dbv)) or 0
     if targetVersion == 0 then
       entry.dbVersion = 0
@@ -353,87 +338,50 @@ function RepriseHC.PruneDeathLogToVersion(version)
       removed = removed + 1
     end
   end
-
   if removed > 0 then
     db.deathLog = keep
-    return removed
   end
-
-  return 0
+  return removed
 end
 
--- Hard reset helper (secret)
-local function HardResetDB(reason, newVersion, opts)
-  if not RepriseHCAchievementsDB then return end
-  RepriseHCAchievementsDB.characters = {}
-  RepriseHCAchievementsDB.guildFirsts = {}
-  RepriseHCAchievementsDB.deathLog = {}
-  RepriseHCAchievementsDB.groupAssignments = {}
+local function RefreshUI()
+  if RepriseHC.UIRefresh then
+    RepriseHC.UIRefresh()
+  end
+end
+RepriseHC.RefreshUI = RefreshUI
 
-  RepriseHCAchievementsDB.config = RepriseHCAchievementsDB.config or {}
+local function HardResetDB(reason, newVersion, opts)
+  local db = EnsureDb()
+  db.characters = {}
+  db.guildFirsts = {}
+  db.deathLog = {}
+  db.groupAssignments = {}
   if newVersion ~= nil then
     if newVersion == 0 then
-      RepriseHCAchievementsDB.config.dbVersion = 0
+      db.config.dbVersion = 0
     else
-      RepriseHCAchievementsDB.config.dbVersion = NormalizeDbVersion(newVersion)
+      db.config.dbVersion = NormalizeDbVersion(newVersion)
     end
-  elseif RepriseHCAchievementsDB.config.dbVersion == nil then
-    RepriseHCAchievementsDB.config.dbVersion = DEFAULT_DB_VERSION
-  elseif RepriseHCAchievementsDB.config.dbVersion > 0 and RepriseHCAchievementsDB.config.dbVersion < DEFAULT_DB_VERSION then
-    RepriseHCAchievementsDB.config.dbVersion = DEFAULT_DB_VERSION
+  elseif db.config.dbVersion == nil then
+    db.config.dbVersion = DEFAULT_DB_VERSION
+  elseif db.config.dbVersion > 0 and db.config.dbVersion < DEFAULT_DB_VERSION then
+    db.config.dbVersion = DEFAULT_DB_VERSION
   end
-
   local msg = "|cffff6060Cleaned!|r"
   if type(reason) == "string" and reason ~= "" then
     msg = reason
   end
-  if not (opts and opts.skipPrint) and RepriseHC.Print then
+  if not (opts and opts.skipPrint) then
     RepriseHC.Print(msg)
   end
-
   if not (opts and opts.skipRefresh) then
     C_Timer.After(0, function()
       if RepriseHC_UI and RepriseHC_UI:IsShown() then
-        if RepriseHC.UIRefresh then RepriseHC.UIRefresh() end
+        RefreshUI()
       end
     end)
   end
-
-RepriseHC._HardResetDB = HardResetDB
-
-function RepriseHC.CanRunGlobalReset()
-  local battleTag = GetPlayerBattleTag()
-  if not battleTag then
-    return false, nil, "|cffff6060Reset requires a Battle.net login.|r"
-  end
-  local hash = ComputeBattleTagHash(battleTag)
-  if not hash then
-    return false, nil, "|cffff6060Unable to validate Battle.net identity.|r"
-  end
-  if hash ~= RESET_SIGNATURE then
-    return false, nil, "|cffff6060Reset not permitted for this account.|r"
-  end
-  return true, hash
-end
-
-function RepriseHC.TriggerGlobalReset(signature)
-  if type(signature) ~= "number" or signature ~= RESET_SIGNATURE then return end
-
-  local current = tonumber(RepriseHC.GetDbVersion()) or DEFAULT_DB_VERSION
-  if current == 0 then current = DEFAULT_DB_VERSION end
-  if current < DEFAULT_DB_VERSION then current = DEFAULT_DB_VERSION end
-  local nextVersion = current + 1
-
-  local stamp = GetServerTime and GetServerTime() or time()
-  RepriseHC._LastResetStamp = stamp
-  RepriseHC._LastResetDbVersion = nextVersion
-
-  HardResetDB("|cffff6060Global reset requested.|r", nextVersion)
-
-  if RepriseHC.Comm_Send then
-    local origin = (RepriseHC.GetPlayerKey and RepriseHC.GetPlayerKey()) or (UnitName("player")) or ""
-    RepriseHC.Comm_Send("RESET", { sig = signature, stamp = stamp, source = origin, dbv = nextVersion, dbVersion = nextVersion })
-  end
 end
 
 RepriseHC._HardResetDB = HardResetDB
@@ -455,102 +403,82 @@ end
 
 function RepriseHC.TriggerGlobalReset(signature)
   if type(signature) ~= "number" or signature ~= RESET_SIGNATURE then return end
-
-  local current = tonumber(RepriseHC.GetDbVersion()) or DEFAULT_DB_VERSION
+  local current = RepriseHC.GetDbVersion()
   if current == 0 then current = DEFAULT_DB_VERSION end
   if current < DEFAULT_DB_VERSION then current = DEFAULT_DB_VERSION end
   local nextVersion = current + 1
-
   local stamp = GetServerTime and GetServerTime() or time()
   RepriseHC._LastResetStamp = stamp
   RepriseHC._LastResetDbVersion = nextVersion
-
   HardResetDB("|cffff6060Global reset requested.|r", nextVersion)
-
   if RepriseHC.Comm_Send then
     local origin = (RepriseHC.GetPlayerKey and RepriseHC.GetPlayerKey()) or (UnitName("player")) or ""
     RepriseHC.Comm_Send("RESET", { sig = signature, stamp = stamp, source = origin, dbv = nextVersion, dbVersion = nextVersion })
   end
 end
 
-function RepriseHC.DB() return RepriseHCAchievementsDB end
-
-
-
--- ========= Centralized Event Dispatcher =========
--- All other modules should register their interest via RepriseHC.RegisterEvent(event, fn)
+local EventFrame = CreateFrame("Frame", "RepriseHC_EventBus")
+local registeredEvents = {}
 RepriseHC._eventHandlers = RepriseHC._eventHandlers or {}
+
+local function EnsureRegistered(ev)
+  if not ev or registeredEvents[ev] then return end
+  EventFrame:RegisterEvent(ev)
+  registeredEvents[ev] = true
+end
+
 function RepriseHC.RegisterEvent(event, fn)
   if not event or type(fn) ~= "function" then return end
-  local t = RepriseHC._eventHandlers[event]
-  if not t then t = {}; RepriseHC._eventHandlers[event] = t end
-  table.insert(t, fn)
+  local list = RepriseHC._eventHandlers[event]
+  if not list then
+    list = {}
+    RepriseHC._eventHandlers[event] = list
+  end
+  table.insert(list, fn)
+  EnsureRegistered(event)
 end
-local _CoreEventFrame = CreateFrame("Frame", "RepriseHC_EventBus")
-local _registered = {}
-local function _ensureRegistered(ev)
-  if _registered[ev] then return end
-  _CoreEventFrame:RegisterEvent(ev)
-  _registered[ev] = true
-end
--- Allow modules to request events even before PLAYER_LOGIN
-function RepriseHC._EnsureEvent(ev) _ensureRegistered(ev) end
 
-_CoreEventFrame:SetScript("OnEvent", function(_, event, ...)
+function RepriseHC._EnsureEvent(ev)
+  EnsureRegistered(ev)
+end
+
+EventFrame:SetScript("OnEvent", function(_, event, ...)
   local list = RepriseHC._eventHandlers[event]
   if list then
-    for i=1,#list do
+    for i = 1, #list do
       local ok, err = pcall(list[i], event, ...)
-      if not ok and RepriseHC.Print then RepriseHC.Print(("Handler error for %s: %s"):format(event, tostring(err))) end
+      if not ok and RepriseHC.Print then
+        RepriseHC.Print(("Handler error for %s: %s"):format(event, tostring(err)))
+      end
     end
   end
 end)
 
--- Register the common set of events used across modules
-local __ALL_EVENTS = {
+local COMMON_EVENTS = {
   "ADDON_LOADED","PLAYER_LOGIN","PLAYER_ENTERING_WORLD","ZONE_CHANGED_NEW_AREA","COMBAT_LOG_EVENT_UNFILTERED",
   "PLAYER_LEVEL_UP","TIME_PLAYED_MSG","CHAT_MSG_ADDON","SKILL_LINES_CHANGED","PLAYER_DEAD","QUEST_TURNED_IN",
   "PLAYER_GUILD_UPDATE","GUILD_ROSTER_UPDATE","TRADE_REQUEST","TRADE_SHOW","AUCTION_HOUSE_SHOW",
   "INSPECT_READY","UNIT_NAME_UPDATE"
 }
-for _, ev in ipairs(__ALL_EVENTS) do _ensureRegistered(ev) end
+for _, ev in ipairs(COMMON_EVENTS) do
+  EnsureRegistered(ev)
+end
 
--- Ensure addon message prefix is registered once (used by Achievements & UI)
 if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
   C_ChatInfo.RegisterAddonMessagePrefix("RepriseHC_ACH")
 end
 
 Core:SetScript("OnEvent", function(_, event, arg1)
   if event == "ADDON_LOADED" and arg1 == RepriseHC.name then
-    if not RepriseHCAchievementsDB then
-      RepriseHCAchievementsDB = {
-        characters = {},
-        guildFirsts = {},
-                    config = {},
-        deathLog = {},
-        groupAssignments = {},
-      }
-    else
-      RepriseHCAchievementsDB.config = RepriseHCAchievementsDB.config or {}
-    end
-    if RepriseHCAchievementsDB.config.dbVersion == nil then
-      RepriseHCAchievementsDB.config.dbVersion = DEFAULT_DB_VERSION
-    elseif RepriseHCAchievementsDB.config.dbVersion > 0 and RepriseHCAchievementsDB.config.dbVersion < DEFAULT_DB_VERSION then
-      RepriseHCAchievementsDB.config.dbVersion = DEFAULT_DB_VERSION
-    end
-    -- Source of truth is the constant above in this file
-    RepriseHCAchievementsDB.config.levelCap = RepriseHC.levelCap or 60
-
-    local currentVersion = RepriseHC.GetDbVersion and RepriseHC.GetDbVersion() or DEFAULT_DB_VERSION
-    if RepriseHC.PruneAchievementsToVersion then
-      RepriseHC.PruneAchievementsToVersion(currentVersion)
-    end
-    if RepriseHC.PruneDeathLogToVersion then
-      RepriseHC.PruneDeathLogToVersion(currentVersion)
-    end
-
+    local db = EnsureDb()
+    db.config.levelCap = RepriseHC.levelCap or 60
+    local currentVersion = RepriseHC.GetDbVersion()
+    RepriseHC.PruneAchievementsToVersion(currentVersion)
+    RepriseHC.PruneDeathLogToVersion(currentVersion)
   elseif event == "PLAYER_LOGIN" then
-    C_ChatInfo.RegisterAddonMessagePrefix("RepriseHC_ACH")
+    if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
+      C_ChatInfo.RegisterAddonMessagePrefix("RepriseHC_ACH")
+    end
     if not RepriseHC.IsGuildAllowed() then
       RepriseHC.Print("|cffff6060Disabled: You must be in the guild 'Reprise' or 'RepriseHC' for this addon to work.|r")
     else
@@ -559,13 +487,11 @@ Core:SetScript("OnEvent", function(_, event, arg1)
   end
 end)
 
--- Slash: /rhc + secret reset
 SLASH_REPRISEHC1 = "/reprisehc"
 SLASH_REPRISEHC2 = "/rhc"
 SlashCmdList["REPRISEHC"] = function(msg)
-  msg = (msg or ""):gsub("^%s+",""):gsub("%s+$","")
+  msg = (msg or ""):gsub("^%s+", ""):gsub("%s+$", "")
   local lower = msg:lower()
-
   if lower == "on" then
     RepriseHC._tradeEnabled = true
     RepriseHC.Print("Trade, mail, auction house protection enabled.")
@@ -576,10 +502,7 @@ SlashCmdList["REPRISEHC"] = function(msg)
     if RepriseHC.RebuildGuildCache then RepriseHC.RebuildGuildCache() end
     RepriseHC.Print("Guild roster refreshed.")
   elseif lower == "dbv" then
-    local ver = DEFAULT_DB_VERSION
-    if RepriseHC.GetDbVersion then
-      ver = RepriseHC.GetDbVersion()
-    end
+    local ver = RepriseHC.GetDbVersion()
     RepriseHC.Print(("Current database version: |cff40ff40%d|r"):format(ver))
   elseif lower:match("^reset%s+all$") then
     local ok, signature, err = RepriseHC.CanRunGlobalReset()
@@ -592,4 +515,3 @@ SlashCmdList["REPRISEHC"] = function(msg)
     RepriseHC.Print("Commands: /rhc on, /rhc off, /rhc reload, /rhc dbv, |cffa0a0a0/rhc reset all|r (SECRET)")
   end
 end
-
