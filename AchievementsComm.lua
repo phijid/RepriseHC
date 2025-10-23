@@ -925,78 +925,62 @@ local function MergeSnapshot(p)
     return cloned
   end
 
-  local staged, stagedByNorm = {}, {}
-  local copy = stagedByNorm -- backwards compat for older local naming
-  -- Some legacy builds referenced a local "copy" table when staging snapshot
-  -- entries. Preserve a temporary alias so any outstanding references resolve
-  -- to the same staging map instead of a nil global.
-  local existingGlobalCopy = rawget(_G, "copy")
-  local providedGlobalCopyAlias = false
-  if existingGlobalCopy == nil then
-    _G.copy = stagedByNorm
-    providedGlobalCopyAlias = true
-  end
-  local function releaseCopyAlias()
-    if providedGlobalCopyAlias then
-      _G.copy = existingGlobalCopy
+    local staged, stagedByNorm, stagedByFallback = {}, {}, {}
+    local providedGlobalCopyAlias = false
+    if rawget(_G, "copy") == nil then
+      _G.copy = stagedByNorm
+      providedGlobalCopyAlias = true
     end
-  end
-  for _, raw in pairs(incoming) do
-    local entry = cloneDeathEntry(raw)
-    if entry then
-      table.insert(staged, entry)
-      local norm = normalizeEntryKey(entry)
-      if norm ~= "" then
-        stagedByNorm[norm] = entry
+
+    local function releaseCopyAlias()
+      if providedGlobalCopyAlias then
+        _G.copy = nil
       end
     end
-  end
 
-  if #staged == 0 then
-    releaseCopyAlias()
-    return
-  end
-
-  table.sort(staged, function(a, b)
-    return (a.when or 0) < (b.when or 0)
-  end)
-
-  local seen, seenFallback = {}, {}
-  local function markSeen(entry)
-    if not entry then return end
-    if localVersion ~= 0 then
-      entry.dbVersion = localVersion
-    else
-      entry.dbVersion = tonumber(entry.dbVersion or entry.dbv) or 0
+    for _, raw in pairs(incoming) do
+      local entry = cloneDeathEntry(raw)
+      if entry then
+        table.insert(staged, entry)
+        local norm = normalizeEntryKey(entry)
+        if norm ~= "" then
+          stagedByNorm[norm] = entry
+        end
+        local fb = fallbackKey(entry)
+        if fb then
+          stagedByFallback[fb] = entry
+        end
+      end
     end
-    entry.dbv = nil
-    local norm = normalizeEntryKey(entry)
-    if norm ~= "" and not seen[norm] then
-      seen[norm] = entry
-    end
-    local fb = fallbackKey(entry)
-    if fb and not seenFallback[fb] then
-      seenFallback[fb] = entry
-    end
-  end
 
-  for _, existing in ipairs(db.deathLog) do
-    markSeen(existing)
-  end
+    if #staged > 0 then
+      table.sort(staged, function(a, b)
+        return (a.when or 0) < (b.when or 0)
+      end)
 
-  local function appendEntry(entry)
-    local cloned = shallowCopy(entry)
-    if not cloned then return end
-    table.insert(db.deathLog, cloned)
-    markSeen(cloned)
-  end
+      local seenByNorm, seenByFallback = {}, {}
 
-  for _, entry in ipairs(staged) do
-    local norm = normalizeEntryKey(entry)
-    if norm ~= "" then
-      local dest = seen[norm]
-      if dest then
-        for k, v in pairs(entry) do
+      local function remember(entry)
+        if not entry then return end
+        if localVersion ~= 0 then
+          entry.dbVersion = localVersion
+        else
+          entry.dbVersion = tonumber(entry.dbVersion or entry.dbv) or 0
+        end
+        entry.dbv = nil
+        local norm = normalizeEntryKey(entry)
+        if norm ~= "" then
+          seenByNorm[norm] = entry
+        end
+        local fb = fallbackKey(entry)
+        if fb then
+          seenByFallback[fb] = entry
+        end
+      end
+
+      local function applyInto(dest, src)
+        if not dest or not src then return end
+        for k, v in pairs(src) do
           if v ~= nil and v ~= "" then
             dest[k] = v
           end
@@ -1004,83 +988,74 @@ local function MergeSnapshot(p)
         if localVersion ~= 0 then
           dest.dbVersion = localVersion
         end
-      else
-        appendEntry(entry)
+        dest.dbv = nil
+        remember(dest)
       end
-    else
-      local fb = fallbackKey(entry)
-      local dest = fb and seenFallback[fb] or nil
-      if dest then
-        for k, v in pairs(entry) do
-          if v ~= nil and v ~= "" then
-            dest[k] = v
-          end
-        end
-        if localVersion ~= 0 then
-          dest.dbVersion = localVersion
-        end
-      else
-        appendEntry(entry)
+
+      for _, existing in ipairs(db.deathLog) do
+        remember(existing)
       end
-      cloned.dbVersion = entryVersion
-      cloned.dbv = nil
-    else
-      cloned.dbVersion = tonumber(cloned.dbVersion or cloned.dbv) or 0
-      cloned.dbv = nil
-    end
-    return cloned
-  end
 
-  local staged, stagedByNorm = {}, {}
-  local copy = stagedByNorm -- backwards compat for older local naming
-  -- Some legacy builds referenced a local "copy" table when staging snapshot
-  -- entries. Preserve a temporary alias so any outstanding references resolve
-  -- to the same staging map instead of a nil global.
-  local existingGlobalCopy = rawget(_G, "copy")
-  local providedGlobalCopyAlias = false
-  if existingGlobalCopy == nil then
-    _G.copy = stagedByNorm
-    providedGlobalCopyAlias = true
-  end
-  local function releaseCopyAlias()
-    if providedGlobalCopyAlias then
-      _G.copy = existingGlobalCopy
-    end
-  end
-
-  -- Ensure our own death record is restored when peers still have it.
-  local myNormKey
-  if RepriseHC and RepriseHC.PlayerKey then
-    local selfKey = RepriseHC.PlayerKey()
-    if selfKey and selfKey ~= "" then
-      myNormKey = selfKey:lower():gsub("%-.*$", "")
-    end
-  end
-
-  if myNormKey and myNormKey ~= "" and not seen[myNormKey] then
-    local match = stagedByNorm[myNormKey]
-    if not match then
       for _, entry in ipairs(staged) do
-        local nm = (entry.name or entry.playerKey or ""):lower():gsub("%-.*$", "")
-        if nm == myNormKey then
-          match = entry
-          break
+        local dest
+        local norm = normalizeEntryKey(entry)
+        if norm ~= "" then
+          dest = seenByNorm[norm]
+        end
+        if not dest then
+          local fb = fallbackKey(entry)
+          if fb then dest = seenByFallback[fb] end
+        end
+
+        if dest then
+          applyInto(dest, entry)
+        else
+          local cloned = shallowCopy(entry)
+          if cloned then
+            table.insert(db.deathLog, cloned)
+            remember(cloned)
+          end
         end
       end
-    end
-    if match then
-      appendEntry(match)
-    end
-  end
 
-  table.sort(db.deathLog, function(a, b)
-    return (a.when or 0) < (b.when or 0)
-  end)
+      -- Ensure our own death record is restored when peers still have it.
+      local myNormKey
+      if RepriseHC and RepriseHC.PlayerKey then
+        local selfKey = RepriseHC.PlayerKey()
+        if selfKey and selfKey ~= "" then
+          myNormKey = selfKey:lower():gsub("%-.*$", "")
+        end
+      end
 
-  if groupAssignmentsChanged and RepriseHC and RepriseHC.RefreshUI then
-    RepriseHC.RefreshUI()
-  end
-  releaseCopyAlias()
+      if myNormKey and myNormKey ~= "" and not seenByNorm[myNormKey] then
+        local match = stagedByNorm[myNormKey]
+        if not match then
+          for _, entry in ipairs(staged) do
+            local nm = (entry.name or entry.playerKey or ""):lower():gsub("%-.*$", "")
+            if nm == myNormKey then
+              match = entry
+              break
+            end
+          end
+        end
+        if match then
+          local cloned = shallowCopy(match)
+          if cloned then
+            table.insert(db.deathLog, cloned)
+            remember(cloned)
+          end
+        end
+      end
+
+      table.sort(db.deathLog, function(a, b)
+        return (a.when or 0) < (b.when or 0)
+      end)
+    end
+
+    if groupAssignmentsChanged and RepriseHC and RepriseHC.RefreshUI then
+      RepriseHC.RefreshUI()
+    end
+    releaseCopyAlias()
 end
 
 -- -------- RX dedupe by sender sequence --------
