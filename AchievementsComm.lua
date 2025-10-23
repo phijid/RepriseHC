@@ -644,10 +644,6 @@ SendSnapshotPayload = function(payloadTable, target)
           payloadTable.dbVersion = dataVersion
         end
       end
-      other = name
-    end
-    if payloadTable.dbVersion == nil then
-      payloadTable.dbVersion = 0
     end
     if payloadTable.dbVersion == nil then
       payloadTable.dbVersion = 0
@@ -1139,11 +1135,45 @@ local function MergeSnapshot(p)
 end
 
 -- -------- RX dedupe by sender sequence --------
-local lastSeqBySender = {} -- [sender]=lastQ
-local function IsDup(sender, q)
+local lastSeqBySender = {} -- [sender] = { seq = <lastQ>, ts = <last server ts>, seenAt = <GetTime()> }
+local function IsDup(sender, q, ts)
+  if not sender or sender == "" then return false end
   if (q or 0) <= 0 then return false end
-  local last = lastSeqBySender[sender]
-  if not last or q > last then lastSeqBySender[sender] = q; return false end
+
+  local now = (GetTime and GetTime()) or time()
+  ts = tonumber(ts) or 0
+
+  local info = lastSeqBySender[sender]
+  if info and info.seenAt and (now - info.seenAt) > 300 then
+    info = nil
+    lastSeqBySender[sender] = nil
+  end
+
+  if not info then
+    lastSeqBySender[sender] = { seq = q, ts = ts, seenAt = now }
+    return false
+  end
+
+  local lastSeq = tonumber(info.seq) or 0
+  local lastTs = tonumber(info.ts) or 0
+
+  if ts > 0 and ts > lastTs then
+    info.seq, info.ts, info.seenAt = q, ts, now
+    return false
+  end
+
+  if q > lastSeq then
+    info.seq = q
+    if ts >= lastTs then info.ts = ts end
+    info.seenAt = now
+    return false
+  end
+
+  if (now - (info.seenAt or 0)) > 30 then
+    info.seq, info.ts, info.seenAt = q, (ts > 0 and ts or lastTs), now
+    return false
+  end
+
   return true
 end
 
@@ -1185,7 +1215,7 @@ local function HandleIncoming(prefix, payload, channel, sender)
   end
 
   local sid, q = t.s or sender or "?", t.q or 0
-  if IsDup(sid, q) then return end
+  if IsDup(sid, q, t.ts) then return end
 
   local p, topic = t.p or {}, t.t
 
