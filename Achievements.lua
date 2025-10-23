@@ -1,12 +1,20 @@
 local ADDON = "RepriseHC"
 RepriseHC = RepriseHC or {}
 
-local maxMilestone = RepriseHC.MaxMilestone()
+local maxMilestone = (RepriseHC.MaxMilestone and RepriseHC.MaxMilestone()) or (math.floor(math.max(0, (RepriseHC.levelCap or 60)) / 10) * 10)
 local faction = (UnitFactionGroup and select(1, UnitFactionGroup("player"))) or "Alliance"
 
 -- ========= DB =========
 RepriseHCAchievementsDB = RepriseHCAchievementsDB or { characters = {}, guildFirsts = {}, deathLog = {}, config = {}, groupAssignments = {} }
 local function DB() return RepriseHCAchievementsDB end
+
+local function CurrentDbVersion()
+  if RepriseHC and RepriseHC.GetDbVersion then
+    local ok = tonumber(RepriseHC.GetDbVersion())
+    if ok and ok >= 0 then return ok end
+  end
+  return tonumber(RepriseHC.defaultDbVersion) or 1
+end
 
 -- ========= Printing =========
 local function Print(msg)
@@ -119,15 +127,34 @@ function RepriseHC.Ach_GetDungeonBossName(d) return (FINAL_BOSS[d] and FINAL_BOS
 local function EnsureChar()
   local key = PlayerKey()
   DB().characters[key] = DB().characters[key] or { points=0, achievements={} }
-  return DB().characters[key]
+  local entry = DB().characters[key]
+  if RepriseHC and RepriseHC.NormalizeCharacterAchievements then
+    RepriseHC.NormalizeCharacterAchievements(entry, CurrentDbVersion())
+  end
+  return entry
 end
 
 local function EarnAchievement(id, displayName, points)
   if not RepriseHC.IsGuildAllowed() then return false end
   local c = EnsureChar()
+  c.achievements = c.achievements or {}
   if c.achievements[id] then return false end
-  c.achievements[id] = { name = displayName, points = points, when = time() }
-  c.points = (c.points or 0) + (points or 0)
+
+  local now = time()
+  local version = CurrentDbVersion()
+  points = tonumber(points) or 0
+  c.achievements[id] = {
+    name = displayName,
+    points = points,
+    when = now,
+    dbVersion = version,
+  }
+
+  if RepriseHC and RepriseHC.NormalizeCharacterAchievements then
+    RepriseHC.NormalizeCharacterAchievements(c, version)
+  else
+    c.points = (c.points or 0) + (points or 0)
+  end
   return true
 end
 
@@ -135,21 +162,68 @@ end
 local function Broadcast(tag, payload)
   -- Do NOT block transport here; Comm_Send handles routing (GUILD/GROUP/WHISPER).
   if tag == "AWARD" then
-    local playerKey, id, ptsStr, name = payload:match("^([^;]*);([^;]*);([^;]*);?(.*)$")
-    if not playerKey or not id then return end
-    local pts = tonumber(ptsStr or "0") or 0
-    RepriseHC.Comm_Send("ACH", { playerKey=playerKey, id=id, pts=pts, name=name })
+    local data
+    if type(payload) == "table" then
+      data = payload
+    else
+      local playerKey, id, ptsStr, name, whenStr, dbvStr = tostring(payload or ""):match("^([^;]*);([^;]*);([^;]*);?([^;]*);?([^;]*);?([^;]*)$")
+      if not playerKey or not id then return end
+      data = {
+        playerKey = playerKey,
+        id = id,
+        pts = tonumber(ptsStr or "0") or 0,
+        name = name,
+        when = tonumber(whenStr or "0") or time(),
+        dbVersion = tonumber(dbvStr or "0") or CurrentDbVersion(),
+      }
+    end
+
+    if not data or not data.playerKey or not data.id then return end
+
+    local pts = tonumber(data.pts) or 0
+    local when = tonumber(data.when) or time()
+    local dbVersion = tonumber(data.dbVersion or data.dbv) or CurrentDbVersion()
+    if dbVersion < 0 then dbVersion = CurrentDbVersion() end
+
+    RepriseHC.Comm_Send("ACH", {
+      playerKey = data.playerKey,
+      id = data.id,
+      pts = pts,
+      name = data.name,
+      when = when,
+      dbVersion = dbVersion,
+      dbv = dbVersion,
+    })
   elseif tag == "DEAD" then
     local playerKey, levelStr, class, race, zone, subzone, name, whenStr = payload:match("^([^;]*);([^;]*);([^;]*);([^;]*);([^;]*);([^;]*);([^;]*);?(.*)$")
     if not playerKey then return end
     local level = tonumber(levelStr or "0") or 0
     local when = tonumber(whenStr) or time()
-    RepriseHC.Comm_Send("DEATH", { playerKey=playerKey, level=level, class=class, race=race, zone=zone, subzone=subzone, name=name, when=when })
+    local currentVersion = (RepriseHC and RepriseHC.GetDbVersion and RepriseHC.GetDbVersion()) or 0
+    RepriseHC.Comm_Send("DEATH", {
+      playerKey=playerKey, level=level, class=class, race=race, zone=zone, subzone=subzone,
+      name=name, when=when, dbVersion=currentVersion, dbv=currentVersion
+    })
   end
 end
 
 local function SyncBroadcastAward(id, name, pts)
-  Broadcast("AWARD", string.format("%s;%s;%d;%s", PlayerKey(), id, pts or 0, name or ""))
+  local playerKey = PlayerKey()
+  local db = DB()
+  local char = db.characters and db.characters[playerKey]
+  local when = time()
+  if char and char.achievements and char.achievements[id] then
+    when = tonumber(char.achievements[id].when) or when
+  end
+  local dbVersion = CurrentDbVersion()
+  Broadcast("AWARD", {
+    playerKey = playerKey,
+    id = id,
+    pts = pts or 0,
+    name = name,
+    when = when,
+    dbVersion = dbVersion,
+  })
 end
 
 function RepriseHC.SyncBroadcastDeath(level, class, race, zone, subzone, name)
@@ -170,7 +244,7 @@ function RepriseHC.Ach_AwardLevelsUpTo(level)
         local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format(nm, pts)
         Print(msg)
         if (RepriseHC.GetShowToGuild()) then
-          SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD", GetDefaultLanguage("player"))
+          SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
         end
         SyncBroadcastAward(id, nm, pts)
       end
@@ -202,7 +276,7 @@ function RepriseHC.Ach_CheckProfessions()
           local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format(nm, pts)
           Print(msg)
           if (RepriseHC.GetShowToGuild()) then
-            SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD", GetDefaultLanguage("player"))
+            SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
           end
           SyncBroadcastAward(id, nm, pts)
         end
@@ -239,7 +313,7 @@ local function AwardSpeedrunIfEligible(totalSeconds)
         local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format(nm, pts)
         Print(msg)
         if (RepriseHC.GetShowToGuild()) then
-          SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD", GetDefaultLanguage("player"))
+          SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
         end
         SyncBroadcastAward(id, nm, pts)
       end
@@ -351,7 +425,7 @@ function RepriseHC.Ach_CheckQuest(questID)
           local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format(nm, pts)
           Print(msg)
           if (RepriseHC.GetShowToGuild()) then
-            SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD", GetDefaultLanguage("player"))
+            SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
           end
           SyncBroadcastAward(id, nm, pts)
         end
@@ -391,10 +465,24 @@ function RepriseHC.Ach_GuildFirstOptions(faction)
 end
 
 local function LockGuildFirst(id, winnerKey, winnerName)
-  if not (RepriseHC.navigation.guildFirst.enabled) then return end 
+  if not (RepriseHC.navigation.guildFirst.enabled) then return end
   DB().guildFirsts = DB().guildFirsts or {}
-  if not DB().guildFirsts[id] then
-    DB().guildFirsts[id] = { winner = winnerKey, winnerName = winnerName, when = time() }
+  local version = CurrentDbVersion()
+  local existing = DB().guildFirsts[id]
+  if existing then
+    local existingVersion = tonumber(existing.dbVersion or existing.dbv) or 0
+    if version ~= 0 and existingVersion ~= version then
+      DB().guildFirsts[id] = nil
+      existing = nil
+    end
+  end
+  if not existing then
+    DB().guildFirsts[id] = {
+      winner = winnerKey,
+      winnerName = winnerName,
+      when = time(),
+      dbVersion = version,
+    }
     return true
   end
   return false
@@ -413,7 +501,7 @@ function RepriseHC.Ach_TryGuildFirsts()
       local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First " .. RepriseHC.levelCap, 200)
       Print(msg)
       if (RepriseHC.GetShowToGuild()) then
-        SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD", GetDefaultLanguage("player"))
+        SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
       end
       SyncBroadcastAward("FIRST_" .. RepriseHC.levelCap, "Guild First " .. RepriseHC.levelCap, 200)
     end
@@ -431,7 +519,7 @@ function RepriseHC.Ach_TryGuildFirsts()
       local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First " .. RepriseHC.levelCap .. " " .. (classDisp or "Class"), 100)
       Print(msg)
       if (RepriseHC.GetShowToGuild()) then
-        SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD", GetDefaultLanguage("player"))
+        SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
       end
       SyncBroadcastAward(idc, title, 100)
     end
@@ -449,7 +537,7 @@ function RepriseHC.Ach_TryGuildFirsts()
       local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First " .. RepriseHC.levelCap .. " " .. (raceDisp or "Race"), 100)
       Print(msg)
       if (RepriseHC.GetShowToGuild()) then
-        SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD", GetDefaultLanguage("player"))
+        SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
       end
       SyncBroadcastAward(idr, title, 100)
     end
@@ -459,10 +547,20 @@ end
 -- ========= Earners helper for UI =========
 function RepriseHC.Ach_GetEarners(achId)
   local out = {}
+  local currentVersion = CurrentDbVersion()
   for playerKey, data in pairs(DB().characters or {}) do
     if data.achievements and data.achievements[achId] then
-      local nm = data.achievements[achId].name or achId
-      table.insert(out, { player=playerKey, when=data.achievements[achId].when or 0, points=data.achievements[achId].points or 0, title=nm })
+      local entry = data.achievements[achId]
+      local entryVersion = tonumber(entry.dbVersion or entry.dbv) or 0
+      if currentVersion == 0 or entryVersion == currentVersion then
+        local nm = entry.name or achId
+        table.insert(out, {
+          player = playerKey,
+          when = entry.when or 0,
+          points = entry.points or 0,
+          title = nm,
+        })
+      end
     end
   end
   table.sort(out, function(a,b) return a.when < b.when end)
@@ -479,6 +577,7 @@ function CaptureDeath()
   local name      = UnitName("player") or (RepriseHC and RepriseHC.PlayerKey and RepriseHC.PlayerKey()) or "Unknown"
 
   local pkey = (RepriseHC and RepriseHC.PlayerKey and RepriseHC.PlayerKey()) or name
+  local dbVersion = (RepriseHC and RepriseHC.GetDbVersion and RepriseHC.GetDbVersion()) or 0
 
   -- de-dupe insert with normalized comparison
   local inserted = false
@@ -491,11 +590,11 @@ function CaptureDeath()
   if log then
     local myNorm = normalizeForCompare(pkey)
     for _, d in ipairs(log) do
-      if normalizeForCompare(d.playerKey) == myNorm then 
+      if normalizeForCompare(d.playerKey) == myNorm then
         return  -- Already logged, don't duplicate
       end
     end
-    
+
     local deathTime = time()
     table.insert(log, {
       playerKey = pkey,
@@ -506,8 +605,21 @@ function CaptureDeath()
       zone      = zone,
       subzone   = sub,
       when      = deathTime,
+      dbVersion = dbVersion,
     })
     inserted = true
+
+    if inserted and IsInGuild() and RepriseHC.GetShowToGuild and RepriseHC.GetShowToGuild() then
+      local where = zone or "Unknown"
+      if sub and sub ~= "" then
+        where = where .. " - " .. sub
+      end
+      local msg = string.format("%s has died (lvl %d) in %s.", name or pkey or "Unknown", level or 0, where)
+      SendChatMessage(msg, "GUILD")
+      if RepriseHC.Comm_MarkOwnDeathAnnounced then
+        RepriseHC.Comm_MarkOwnDeathAnnounced(deathTime)
+      end
+    end
   end
 
   if not inserted then return end
@@ -516,9 +628,10 @@ function CaptureDeath()
     if RepriseHC and RepriseHC.SyncBroadcastDeath then
       RepriseHC.SyncBroadcastDeath(level, eclass, erace, zone, sub, name)
     elseif RepriseHC and RepriseHC.Comm_Send then
+      local currentVersion = (RepriseHC and RepriseHC.GetDbVersion and RepriseHC.GetDbVersion()) or 0
       RepriseHC.Comm_Send("DEATH", {
         playerKey = pkey, name = name, level = level, class = eclass, race = erace,
-        zone = zone, subzone = sub, when = time()
+        zone = zone, subzone = sub, when = time(), dbVersion = currentVersion, dbv = currentVersion
       })
     end
   end
@@ -583,7 +696,7 @@ local function OnCombatLogEvent()
     local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format(nm, pts)
     Print(msg)
     if (RepriseHC.GetShowToGuild()) then
-      SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD", GetDefaultLanguage("player"))
+      SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
     end
     SyncBroadcastAward(id, nm, pts)
   end
@@ -594,11 +707,13 @@ local function __RHC_Ach_OnEvent(event, ...)
     C_Timer.After(0, function() UpdateInstanceState() end)
     C_Timer.After(1.0, function()
       if RepriseHC.IsGuildAllowed and RepriseHC.IsGuildAllowed() then
-        local level = UnitLevel("player") or 1
-        if RepriseHC.Ach_AwardLevelsUpTo then RepriseHC.Ach_AwardLevelsUpTo(level) end
-        if RepriseHC.Ach_CheckProfessions then RepriseHC.Ach_CheckProfessions() end
-        if level >= RepriseHC.levelCap and RepriseHC.Ach_TryGuildFirsts then RepriseHC.Ach_TryGuildFirsts() end
-        if RepriseHC.Ach_CheckSpeedrunOnDing then RepriseHC.Ach_CheckSpeedrunOnDing(math.floor(level / 10) * 10) end
+        if RepriseHC.AchievementTesting then
+          local level = UnitLevel("player") or 1
+          if RepriseHC.Ach_AwardLevelsUpTo then RepriseHC.Ach_AwardLevelsUpTo(level) end
+          if RepriseHC.Ach_CheckProfessions then RepriseHC.Ach_CheckProfessions() end
+          if level >= RepriseHC.levelCap and RepriseHC.Ach_TryGuildFirsts then RepriseHC.Ach_TryGuildFirsts() end
+          if RepriseHC.Ach_CheckSpeedrunOnDing then RepriseHC.Ach_CheckSpeedrunOnDing(math.floor(level / 10) * 10) end
+        end
       end
     end)
   elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
