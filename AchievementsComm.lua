@@ -102,16 +102,31 @@ local function CurrentDbVersion()
 end
 
 local function EnsureDbVersion(ver)
-  if not ver or ver <= 0 then return end
+  local version = tonumber(ver) or 0
   if RepriseHC and RepriseHC.SetDbVersion then
-    RepriseHC.SetDbVersion(ver)
+    RepriseHC.SetDbVersion(version)
   else
     local db = RepriseHC and RepriseHC.DB and RepriseHC.DB()
     if db then
       db.config = db.config or {}
-      db.config.dbVersion = ver
+      db.config.dbVersion = version
     end
   end
+  if RepriseHC and RepriseHC.PruneDeathLogToVersion then
+    local removed = RepriseHC.PruneDeathLogToVersion(version)
+    if removed > 0 and RepriseHC.RefreshUI then
+      RepriseHC.RefreshUI()
+    end
+  end
+end
+
+local function PruneLocalDeathsForCurrentVersion()
+  if not (RepriseHC and RepriseHC.PruneDeathLogToVersion) then return 0 end
+  local removed = RepriseHC.PruneDeathLogToVersion(CurrentDbVersion())
+  if removed > 0 and RepriseHC.RefreshUI then
+    RepriseHC.RefreshUI()
+  end
+  return removed
 end
 
 local function ShouldAcceptIncremental(dbv, sender)
@@ -232,6 +247,7 @@ do
     if ev == "PLAYER_LOGIN" or ev == "PLAYER_ENTERING_WORLD" then
       RefreshSelfIdentity()
       MarkGuildTouched()
+      PruneLocalDeathsForCurrentVersion()
     elseif ev == "PLAYER_GUILD_UPDATE" or ev == "GUILD_ROSTER_UPDATE" then
       MarkGuildTouched()
     end
@@ -386,13 +402,38 @@ end
 -- -------- snapshot build/merge --------
 function BuildSnapshot()
   local db = RepriseHC.DB()
+  db.characters = db.characters or {}
+  db.guildFirsts = db.guildFirsts or {}
+  db.deathLog = db.deathLog or {}
+  db.config = db.config or {}
+
+  local dbVersion = CurrentDbVersion()
+  if RepriseHC and RepriseHC.PruneDeathLogToVersion then
+    RepriseHC.PruneDeathLogToVersion(dbVersion)
+  end
+
+  local deathLogCopy = {}
+  for _, entry in ipairs(db.deathLog) do
+    if type(entry) == "table" then
+      local copy = {}
+      for k, v in pairs(entry) do copy[k] = v end
+      local entryVersion = tonumber(copy.dbVersion or copy.dbv) or dbVersion
+      if dbVersion ~= 0 and entryVersion ~= dbVersion then
+        entryVersion = dbVersion
+      end
+      copy.dbVersion = entryVersion
+      copy.dbv = nil
+      table.insert(deathLogCopy, copy)
+    end
+  end
+
   return {
     ver         = RepriseHC.version or "0",
-    dbVersion   = CurrentDbVersion(),
-    characters  = db.characters or {},
-    guildFirsts = db.guildFirsts or {},
-    deathLog    = db.deathLog or {},
-    levelCap    = (db.config and db.config.levelCap) or RepriseHC.levelCap
+    dbVersion   = dbVersion,
+    characters  = db.characters,
+    guildFirsts = db.guildFirsts,
+    deathLog    = deathLogCopy,
+    levelCap    = db.config.levelCap or RepriseHC.levelCap
   }
 end
 
@@ -497,31 +538,11 @@ local function MergeSnapshot(p)
     if (not nm or nm == "") and type(pk) == "string" then
       nm = pk:match("^([^%-]+)") or pk
     end
-    return {
-      playerKey = pk,
-      name      = nm,
-      level     = src.level,
-      class     = src.class,
-      race      = src.race,
-      zone      = src.zone,
-      subzone   = src.subzone,
-      when      = when,
-    }
-  end
-
-  local function cloneDeathEntry(src)
-    if type(src) ~= "table" then return nil end
-    local when = tonumber(src.when) or tonumber(src.time)
-    if when and when > 0 then
-      when = math.floor(when)
-    else
-      when = time()
-    end
-    local pk = src.playerKey or src.player or src.name
-    if not pk or pk == "" then return nil end
-    local nm = src.name
-    if (not nm or nm == "") and type(pk) == "string" then
-      nm = pk:match("^([^%-]+)") or pk
+    local entryVersion = tonumber(src.dbVersion or src.dbv) or incomingVersion or localVersion or 0
+    if incomingVersion and incomingVersion ~= 0 then
+      entryVersion = incomingVersion
+    elseif localVersion and localVersion ~= 0 and entryVersion == 0 then
+      entryVersion = localVersion
     end
     return {
       playerKey = pk,
@@ -532,6 +553,7 @@ local function MergeSnapshot(p)
       zone      = src.zone,
       subzone   = src.subzone,
       when      = when,
+      dbVersion = entryVersion,
     }
   end
 
@@ -565,6 +587,17 @@ local function MergeSnapshot(p)
     if type(entry) ~= "table" then return nil end
     local copy = {}
     for k, v in pairs(entry) do copy[k] = v end
+    if localVersion ~= 0 then
+      local entryVersion = tonumber(copy.dbVersion or copy.dbv) or localVersion
+      if entryVersion ~= localVersion then
+        entryVersion = localVersion
+      end
+      copy.dbVersion = entryVersion
+      copy.dbv = nil
+    else
+      copy.dbVersion = tonumber(copy.dbVersion or copy.dbv) or 0
+      copy.dbv = nil
+    end
     return copy
   end
 
@@ -589,6 +622,12 @@ local function MergeSnapshot(p)
   local seen, seenFallback = {}, {}
   local function markSeen(entry)
     if not entry then return end
+    if localVersion ~= 0 then
+      entry.dbVersion = localVersion
+    else
+      entry.dbVersion = tonumber(entry.dbVersion or entry.dbv) or 0
+    end
+    entry.dbv = nil
     local norm = normalizeEntryKey(entry)
     if norm ~= "" and not seen[norm] then
       seen[norm] = entry
@@ -620,6 +659,9 @@ local function MergeSnapshot(p)
             dest[k] = v
           end
         end
+        if localVersion ~= 0 then
+          dest.dbVersion = localVersion
+        end
       else
         appendEntry(entry)
       end
@@ -632,36 +674,13 @@ local function MergeSnapshot(p)
             dest[k] = v
           end
         end
+        if localVersion ~= 0 then
+          dest.dbVersion = localVersion
+        end
       else
         appendEntry(entry)
       end
     end
-    if match then
-      appendEntry(match)
-    end
-  end
-
-  if #staged == 0 then return end
-
-  table.sort(staged, function(a, b)
-    return (a.when or 0) < (b.when or 0)
-  end)
-
-  local seen, seenFallback = {}, {}
-  local function markSeen(entry)
-    if not entry then return end
-    local norm = normalizeEntryKey(entry)
-    if norm ~= "" and not seen[norm] then
-      seen[norm] = entry
-    end
-    local fb = fallbackKey(entry)
-    if fb and not seenFallback[fb] then
-      seenFallback[fb] = entry
-    end
-  end
-
-  for _, existing in ipairs(db.deathLog) do
-    markSeen(existing)
   end
 
   -- Ensure our own death record is restored when peers still have it.
@@ -786,9 +805,10 @@ local function HandleIncoming(prefix, payload, channel, sender)
 
     local eventWhen = tonumber(p.when) or tonumber(p.time) or time()
     eventWhen = eventWhen > 0 and math.floor(eventWhen) or time()
+    local entryVersion = tonumber(p.dbVersion or p.dbv) or CurrentDbVersion()
     table.insert(RepriseHC.GetDeathLog(), {
       playerKey=p.playerKey or p.name, name=p.name, level=p.level, class=p.class, race=p.race,
-      zone=p.zone, subzone=p.subzone, when=eventWhen
+      zone=p.zone, subzone=p.subzone, when=eventWhen, dbVersion=entryVersion
     })
 
     if RHC_DEBUG then print("|cff99ccff[RHC]|r DEATH inserted for", p.playerKey or p.name or "?") end
@@ -951,6 +971,7 @@ end
 
 F:SetScript("OnEvent", function(_, ev)
   if ev == "PLAYER_ENTERING_WORLD" then
+    PruneLocalDeathsForCurrentVersion()
     haveSnapshot = false
     C_Timer.After(5,  requestWithBackoff)
     C_Timer.After(15, requestWithBackoff)

@@ -144,7 +144,11 @@ local function Broadcast(tag, payload)
     if not playerKey then return end
     local level = tonumber(levelStr or "0") or 0
     local when = tonumber(whenStr) or time()
-    RepriseHC.Comm_Send("DEATH", { playerKey=playerKey, level=level, class=class, race=race, zone=zone, subzone=subzone, name=name, when=when })
+    local currentVersion = (RepriseHC and RepriseHC.GetDbVersion and RepriseHC.GetDbVersion()) or 0
+    RepriseHC.Comm_Send("DEATH", {
+      playerKey=playerKey, level=level, class=class, race=race, zone=zone, subzone=subzone,
+      name=name, when=when, dbVersion=currentVersion, dbv=currentVersion
+    })
   end
 end
 
@@ -479,6 +483,7 @@ function CaptureDeath()
   local name      = UnitName("player") or (RepriseHC and RepriseHC.PlayerKey and RepriseHC.PlayerKey()) or "Unknown"
 
   local pkey = (RepriseHC and RepriseHC.PlayerKey and RepriseHC.PlayerKey()) or name
+  local dbVersion = (RepriseHC and RepriseHC.GetDbVersion and RepriseHC.GetDbVersion()) or 0
 
   -- de-dupe insert with normalized comparison
   local inserted = false
@@ -506,6 +511,7 @@ function CaptureDeath()
       zone      = zone,
       subzone   = sub,
       when      = deathTime,
+      dbVersion = dbVersion,
     })
     inserted = true
 
@@ -528,9 +534,10 @@ function CaptureDeath()
     if RepriseHC and RepriseHC.SyncBroadcastDeath then
       RepriseHC.SyncBroadcastDeath(level, eclass, erace, zone, sub, name)
     elseif RepriseHC and RepriseHC.Comm_Send then
+      local currentVersion = (RepriseHC and RepriseHC.GetDbVersion and RepriseHC.GetDbVersion()) or 0
       RepriseHC.Comm_Send("DEATH", {
         playerKey = pkey, name = name, level = level, class = eclass, race = erace,
-        zone = zone, subzone = sub, when = time()
+        zone = zone, subzone = sub, when = time(), dbVersion = currentVersion, dbv = currentVersion
       })
     end
   end
