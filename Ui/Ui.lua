@@ -164,6 +164,15 @@ local function RefreshSidebar()
   end
 end
 
+function RepriseHC.UIRefresh()
+  if UI and UI.Refresh then
+    UI:Refresh()
+  end
+  if RefreshSidebar then
+    RefreshSidebar()
+  end
+end
+
 SLASH_RHCU1 = "/rhcu"
 SlashCmdList["RHCU"] = function()
   if RepriseHC_UI:IsShown() then RepriseHC_UI:Hide() else RepriseHC_UI:Show(); UI:Refresh(); RefreshSidebar() end

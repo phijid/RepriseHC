@@ -6,10 +6,41 @@ local GROUPS = {
 local function DB_SAFE()
   local db = RepriseHC.DB and RepriseHC.DB() or nil
   if not db then return nil end
-  db.groupAssignments = db.groupAssignments or {}  -- [characterKey] = group name
+  db.groupAssignments = db.groupAssignments or {}  -- [characterKey] = { group=..., dbVersion=... }
   db.characters       = db.characters or {}        -- [characterKey] = { points=..., class=..., ... }
   db.deathLog         = db.deathLog or {}          -- array of { name/playerKey, ... }
   return db
+end
+
+local function ExtractGroup(raw)
+  if type(raw) == "table" then
+    local group = raw.group or raw.name or raw.value
+    if type(group) == "string" then
+      group = group:gsub("^%s+", ""):gsub("%s+$", "")
+      if group == "" then group = nil end
+    end
+    return group, tonumber(raw.dbVersion or raw.dbv) or 0
+  elseif type(raw) == "string" then
+    local group = raw:gsub("^%s+", ""):gsub("%s+$", "")
+    if group == "" then group = nil end
+    return group, 0
+  end
+  return nil, 0
+end
+
+local function CurrentDbVersion()
+  if RepriseHC and RepriseHC.GetDbVersion then
+    local ok = tonumber(RepriseHC.GetDbVersion())
+    if ok and ok > 0 then return ok end
+  end
+  return 0
+end
+
+local function CurrentGroupFor(playerKey)
+  local db = DB_SAFE()
+  if not db then return nil end
+  local raw = db.groupAssignments[playerKey]
+  return select(1, ExtractGroup(raw))
 end
 
 local function MyPoints()
@@ -49,15 +80,20 @@ local function CalcGroupStandings()
   for _, g in ipairs(GROUPS) do totals[g] = 0; members[g] = {} end
 
   -- Iterate over assignments so members with 0 points still appear
-  for key, g in pairs(db.groupAssignments) do
-    if GROUP_SET[g] then
-      local char  = db.characters[key]
-      local pts   = tonumber(char and char.points) or 0
-      local dead  = IsDead(key)
-      if not dead then
-        totals[g] = totals[g] + pts   -- only alive add to totals
+  local dbVersion = CurrentDbVersion()
+
+  for key, raw in pairs(db.groupAssignments) do
+    local g, entryVersion = ExtractGroup(raw)
+    if g and GROUP_SET[g] then
+      if dbVersion == 0 or entryVersion == 0 or entryVersion == dbVersion then
+        local char  = db.characters[key]
+        local pts   = tonumber(char and char.points) or 0
+        local dead  = IsDead(key)
+        if not dead then
+          totals[g] = totals[g] + pts   -- only alive add to totals
+        end
+        table.insert(members[g], { key = key, points = pts, dead = dead })
       end
-      table.insert(members[g], { key = key, points = pts, dead = dead })
     end
   end
 
@@ -75,9 +111,39 @@ local function SetMyGroup(groupName)
   for _, g in ipairs(GROUPS) do if g == groupName then ok = true; break end end
   if not ok then return end
 
-  db.groupAssignments[RepriseHC.PlayerKey()] = groupName
-  if RepriseHC.Print then
+  local playerKey = RepriseHC.PlayerKey and RepriseHC.PlayerKey() or nil
+  if not playerKey or playerKey == "" then return end
+  local existing = CurrentGroupFor(playerKey)
+  if existing == groupName then return end
+  local stamp = (GetServerTime and GetServerTime()) or time()
+  local version = CurrentDbVersion()
+  if version and version <= 0 then version = nil end
+  local changed = true
+  if RepriseHC.UpdateGroupAssignment and playerKey then
+    changed = RepriseHC.UpdateGroupAssignment(playerKey, groupName, { when = stamp, dbVersion = version })
+  else
+    db.groupAssignments[playerKey or "?"] = { group = groupName, when = stamp, dbVersion = version or 0 }
+  end
+
+  if changed and RepriseHC.Print then
     RepriseHC.Print(("You joined %s (+%d pts)."):format(groupName, MyPoints()))
+  end
+  if changed and RepriseHC.Comm_Send and playerKey then
+    local baseName = select(1, UnitName("player")) or playerKey
+    local payload = {
+      playerKey = playerKey,
+      name = baseName,
+      group = groupName,
+      when = stamp,
+    }
+    if version then
+      payload.dbVersion = version
+      payload.dbv = version
+    end
+    RepriseHC.Comm_Send("GROUP", payload)
+  end
+  if changed and RepriseHC.RefreshUI then
+    RepriseHC.RefreshUI()
   end
   if UI and UI.Refresh then UI:Refresh() end
 end
@@ -126,8 +192,10 @@ local function EnsureDropdown(page, y)
   end
 
   dd._refresh = function()
-    local db = DB_SAFE()
-    local current = db and db.groupAssignments[RepriseHC.PlayerKey()] or nil
+    local current = nil
+    if RepriseHC.PlayerKey then
+      current = CurrentGroupFor(RepriseHC.PlayerKey())
+    end
     UIDropDownMenu_SetSelectedValue(dd, current)
     UIDropDownMenu_SetText(dd, current or "Choose…")
   end
