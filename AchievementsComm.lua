@@ -933,6 +933,30 @@ local function MergeSnapshot(p)
       if norm ~= "" then
         stagedByNorm[norm] = entry
       end
+    else
+      local fb = fallbackKey(entry)
+      local dest = fb and seenFallback[fb] or nil
+      if dest then
+        for k, v in pairs(entry) do
+          if v ~= nil and v ~= "" then
+            dest[k] = v
+          end
+        end
+        if localVersion ~= 0 then
+          dest.dbVersion = localVersion
+        end
+      else
+        appendEntry(entry)
+      end
+    end
+  end
+
+  -- Ensure our own death record is restored when peers still have it.
+  local myNormKey
+  if RepriseHC and RepriseHC.PlayerKey then
+    local selfKey = RepriseHC.PlayerKey()
+    if selfKey and selfKey ~= "" then
+      myNormKey = selfKey:lower():gsub("%-.*$", "")
     end
   end
 
