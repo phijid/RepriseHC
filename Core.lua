@@ -8,6 +8,7 @@ RepriseHC.allowedGuilds = { ["Reprise"] = true, ["RepriseHC"] = true, ["Frontier
 RepriseHC.levelCap = 20
 RepriseHC.levels = {10,20,30,40,50,60}
 RepriseHC.showToGuild = true
+RepriseHC.runtime = RepriseHC.runtime or {}
 
 RepriseHC.speedrunThresholds = {
   [10] = 2,   -- reach 10 under 2 hours
@@ -104,7 +105,7 @@ end
 
 local RESET_SALT = "RepriseHC_ResetSalt_v1"
 local RESET_HASH_BASE = 131
-local RESET_HASH_MOD  = 2147483647 -- 2^31-1 (fits safely in Lua double precision)
+local RESET_HASH_MOD  = 2147483647 -- 2^31-1, fits within Lua number precision
 local RESET_SIGNATURE = 1740334091 -- Hash for salt + Subarashii#11931
 
 RepriseHC._ResetSignature = RESET_SIGNATURE
@@ -121,12 +122,12 @@ end
 
 local function GetPlayerBattleTag()
   if not BNGetInfo then return nil end
-  local a, b = BNGetInfo()
-  if type(b) == "string" and b ~= "" then
-    return b
+  local displayName, battleTag = BNGetInfo()
+  if type(battleTag) == "string" and battleTag ~= "" then
+    return battleTag
   end
-  if type(a) == "string" and a:find("#", 1, true) then
-    return a
+  if type(displayName) == "string" and displayName:find("#", 1, true) then
+    return displayName
   end
   return nil
 end
@@ -202,7 +203,9 @@ function RepriseHC.PushDeath(entry)
   if not entry then return end
   local dl = RepriseHC.GetDeathLog()
   if entry.dbVersion == nil then
-    entry.dbVersion = RepriseHC.GetDbVersion()
+    local version = entry.dbv or (RepriseHC.GetDbVersion and RepriseHC.GetDbVersion()) or 0
+    entry.dbVersion = version
+    entry.dbv = nil
   end
   dl[#dl+1] = entry
 end
@@ -265,17 +268,15 @@ local function HardResetDB(reason, newVersion, opts)
     RepriseHCAchievementsDB.config.dbVersion = 0
   end
 
-  local skipPrint = opts and opts.skipPrint
   local msg = "|cffff6060Cleaned!|r"
   if type(reason) == "string" and reason ~= "" then
     msg = reason
   end
-  if not skipPrint then
+  if not (opts and opts.skipPrint) and RepriseHC.Print then
     RepriseHC.Print(msg)
   end
 
-  local skipRefresh = opts and opts.skipRefresh
-  if not skipRefresh then
+  if not (opts and opts.skipRefresh) then
     C_Timer.After(0, function()
       if RepriseHC_UI and RepriseHC_UI:IsShown() then
         if RepriseHC.UIRefresh then RepriseHC.UIRefresh() end
@@ -283,64 +284,6 @@ local function HardResetDB(reason, newVersion, opts)
     end)
   end
 
-function RepriseHC.CanRunGlobalReset()
-  local battleTag = GetPlayerBattleTag()
-  if not battleTag then
-    return false, nil, "|cffff6060Reset requires a Battle.net login.|r"
-  end
-  local hash = ComputeBattleTagHash(battleTag)
-  if not hash then
-    return false, nil, "|cffff6060Unable to validate Battle.net identity.|r"
-  end
-  if hash ~= RESET_SIGNATURE then
-    return false, nil, "|cffff6060Reset not permitted for this account.|r"
-  end
-  return true, hash
-end
-
-function RepriseHC.TriggerGlobalReset(signature)
-  if type(signature) ~= "number" or signature ~= RESET_SIGNATURE then return end
-
-  local stamp = GetServerTime and GetServerTime() or time()
-  RepriseHC._LastResetStamp = stamp
-
-  HardResetDB("|cffff6060Global reset requested.|r", stamp)
-
-  if RepriseHC.Comm_Send then
-    local origin = RepriseHC.GetPlayerKey and RepriseHC.GetPlayerKey() or UnitName("player") or ""
-    RepriseHC.Comm_Send("RESET", { sig = signature, stamp = stamp, source = origin, dbv = stamp })
-  end
-end
-
-RepriseHC._HardResetDB = HardResetDB
-
-function RepriseHC.CanRunGlobalReset()
-  local battleTag = GetPlayerBattleTag()
-  if not battleTag then
-    return false, nil, "|cffff6060Reset requires a Battle.net login.|r"
-  end
-  local hash = ComputeBattleTagHash(battleTag)
-  if not hash then
-    return false, nil, "|cffff6060Unable to validate Battle.net identity.|r"
-  end
-  if hash ~= RESET_SIGNATURE then
-    return false, nil, "|cffff6060Reset not permitted for this account.|r"
-  end
-  return true, hash
-end
-
-function RepriseHC.TriggerGlobalReset(signature)
-  if type(signature) ~= "number" or signature ~= RESET_SIGNATURE then return end
-
-  local stamp = GetServerTime and GetServerTime() or time()
-  RepriseHC._LastResetStamp = stamp
-
-  HardResetDB("|cffff6060Global reset requested.|r")
-
-  if RepriseHC.Comm_Send then
-    local origin = RepriseHC.GetPlayerKey and RepriseHC.GetPlayerKey() or UnitName("player") or ""
-    RepriseHC.Comm_Send("RESET", { sig = signature, stamp = stamp, source = origin })
-  end
 end
 
 RepriseHC._HardResetDB = HardResetDB
@@ -369,7 +312,7 @@ function RepriseHC.TriggerGlobalReset(signature)
   HardResetDB("|cffff6060Global reset requested.|r", stamp)
 
   if RepriseHC.Comm_Send then
-    local origin = RepriseHC.GetPlayerKey and RepriseHC.GetPlayerKey() or UnitName("player") or ""
+    local origin = (RepriseHC.GetPlayerKey and RepriseHC.GetPlayerKey()) or (UnitName("player")) or ""
     RepriseHC.Comm_Send("RESET", { sig = signature, stamp = stamp, source = origin, dbv = stamp })
   end
 end
@@ -467,7 +410,7 @@ SlashCmdList["REPRISEHC"] = function(msg)
     if RepriseHC.RebuildGuildCache then RepriseHC.RebuildGuildCache() end
     RepriseHC.Print("Guild roster refreshed.")
   elseif lower == "dbv" then
-    local ver = tonumber(RepriseHC.GetDbVersion()) or 0
+    local ver = tonumber(RepriseHC.GetDbVersion and RepriseHC.GetDbVersion()) or 0
     RepriseHC.Print(("Current database version: |cff40ff40%d|r"):format(ver))
   elseif lower:match("^reset%s+all$") then
     local ok, signature, err = RepriseHC.CanRunGlobalReset()

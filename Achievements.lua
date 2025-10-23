@@ -1,7 +1,7 @@
 local ADDON = "RepriseHC"
 RepriseHC = RepriseHC or {}
 
-local maxMilestone = RepriseHC.MaxMilestone()
+local maxMilestone = (RepriseHC.MaxMilestone and RepriseHC.MaxMilestone()) or (math.floor(math.max(0, (RepriseHC.levelCap or 60)) / 10) * 10)
 local faction = (UnitFactionGroup and select(1, UnitFactionGroup("player"))) or "Alliance"
 
 -- ========= DB =========

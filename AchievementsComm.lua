@@ -26,6 +26,21 @@ local AceSer  = assert(LibStub("AceSerializer-3.0"))
 RepriseHC = RepriseHC or {}
 AceComm:Embed(RepriseHC)
 
+local function SafeDB()
+  if RepriseHC and RepriseHC.DB then
+    local ok, db = pcall(RepriseHC.DB)
+    if ok and type(db) == "table" then return db end
+  end
+  RepriseHCAchievementsDB = RepriseHCAchievementsDB or {
+    characters = {},
+    guildFirsts = {},
+    deathLog = {},
+    config = {},
+    groupAssignments = {},
+  }
+  return RepriseHCAchievementsDB
+end
+
 -- -------- identity / envelope / seq --------
 local selfName, selfRealm
 local function RefreshSelfIdentity()
@@ -401,7 +416,7 @@ end
 
 -- -------- snapshot build/merge --------
 function BuildSnapshot()
-  local db = RepriseHC.DB()
+  local db = SafeDB()
   db.characters = db.characters or {}
   db.guildFirsts = db.guildFirsts or {}
   db.deathLog = db.deathLog or {}
@@ -503,18 +518,16 @@ local function MergeSnapshot(p)
     if RepriseHC and RepriseHC._HardResetDB then
       RepriseHC._HardResetDB("|cffff6060Global reset detected from sync.|r", incomingVersion)
     else
-      local db = RepriseHC.DB()
-      if db then
-        db.characters, db.guildFirsts, db.deathLog, db.groupAssignments = {}, {}, {}, {}
-        db.config = db.config or {}
-        db.config.dbVersion = incomingVersion
-      end
+      local db = SafeDB()
+      db.characters, db.guildFirsts, db.deathLog, db.groupAssignments = {}, {}, {}, {}
+      db.config = db.config or {}
+      db.config.dbVersion = incomingVersion
     end
     EnsureDbVersion(incomingVersion)
     localVersion = incomingVersion
   end
 
-  local db = RepriseHC.DB()
+  local db = SafeDB()
   db.characters  = db.characters  or {}
   db.guildFirsts = db.guildFirsts or {}
   db.deathLog    = db.deathLog    or {}
@@ -768,7 +781,7 @@ local function HandleIncoming(prefix, payload, channel, sender)
     if not ShouldAcceptIncremental(p.dbv, sender) then return end
     normalizeKeyAndName(p, sender)
 
-    local db = RepriseHC.DB()
+    local db = SafeDB()
     db.characters[p.playerKey] = db.characters[p.playerKey] or { points=0, achievements={} }
     local c = db.characters[p.playerKey]
     if not c.achievements[p.id] then
