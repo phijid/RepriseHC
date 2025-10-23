@@ -924,9 +924,6 @@ local function MergeSnapshot(p)
     if providedGlobalCopyAlias then
       _G.copy = existingGlobalCopy
     end
-    if match then
-      appendEntry(match)
-    end
   end
   for _, raw in pairs(incoming) do
     local entry = cloneDeathEntry(raw)
