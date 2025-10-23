@@ -9,6 +9,7 @@ local lastResetStamp
 local haveSnapshot = false
 local lastUpgradeRequestAt = 0
 local SendSnapshotPayload
+local AdoptIncomingVersion
 local DIRECT_ADDON_MAX = 240
 
 local function debugPrint(...)
@@ -200,6 +201,12 @@ local function ShouldAcceptIncremental(dbv, sender)
       print("|cffff8800[RHC]|r newer payload detected", incoming, ">", localVersion)
     end
     haveSnapshot = false
+
+    local adopted = false
+    if AdoptIncomingVersion then
+      adopted = AdoptIncomingVersion(incoming)
+    end
+
     if C_Timer and C_Timer.After then
       local now = GetTime and GetTime() or time()
       if now - (lastUpgradeRequestAt or 0) > 5 then
@@ -211,7 +218,12 @@ local function ShouldAcceptIncremental(dbv, sender)
         end)
       end
     end
-    return false
+
+    if adopted then
+      return true
+    end
+
+    return CurrentDbVersion() == incoming
   end
   return true
 end
@@ -623,8 +635,32 @@ end
 SendSnapshotPayload = function(payloadTable, target)
   if type(payloadTable) == "table" then
     local current = CurrentDbVersion()
+    if payloadTable.dbVersion == nil then
+      if current and current > 0 then
+        payloadTable.dbVersion = current
+      elseif payloadTable.data and type(payloadTable.data) == "table" then
+        local dataVersion = tonumber(payloadTable.data.dbVersion or payloadTable.data.dbv)
+        if dataVersion and dataVersion > 0 then
+          payloadTable.dbVersion = dataVersion
+        end
+      end
+      other = name
+    end
+  end
+  if not other then return false end
+
+  local sent = SendWhisperTargets(payload, other, "DEATH direct->")
+  return sent
+end
+
+SendSnapshotPayload = function(payloadTable, target)
+  if type(payloadTable) == "table" then
+    local current = CurrentDbVersion()
     if current and current > 0 and payloadTable.dbVersion == nil then
       payloadTable.dbVersion = current
+    end
+    if payloadTable.dbVersion == nil then
+      payloadTable.dbVersion = 0
     end
   end
   local wire = BuildWire("SNAP", payloadTable)
@@ -648,6 +684,60 @@ local function SendSmallSnapshot()
 end
 
 local lastResetSentTo = {}
+
+local function ResetDbTablesToVersion(target)
+  local db = SafeDB()
+  db.characters = {}
+  db.guildFirsts = {}
+  db.deathLog = {}
+  db.groupAssignments = {}
+  db.config = db.config or {}
+  db.config.dbVersion = target
+end
+
+AdoptIncomingVersion = function(version)
+  local target = tonumber(version) or 0
+  if not target or target <= 0 then return false end
+
+  local current = CurrentDbVersion()
+  if current >= target then
+    return current == target
+  end
+
+  local notice = "|cffff8800New database version detected. Syncing...|r"
+
+  if RepriseHC and RepriseHC._HardResetDB then
+    RepriseHC._HardResetDB(notice, target, { skipRefresh = true })
+  else
+    ResetDbTablesToVersion(target)
+    if RepriseHC and RepriseHC.Print then
+      RepriseHC.Print(notice)
+    end
+  end
+
+  EnsureDbVersion(target)
+
+  if lastResetSentTo then
+    if wipe then
+      wipe(lastResetSentTo)
+    else
+      lastResetSentTo = {}
+    end
+  end
+
+  haveSnapshot = false
+
+  if RepriseHC and RepriseHC.RefreshUI then
+    RepriseHC.RefreshUI()
+  end
+
+  if RepriseHC then
+    RepriseHC._LastResetDbVersion = target
+    RepriseHC._LastResetStamp = RepriseHC._LastResetStamp or ((GetServerTime and GetServerTime()) or time())
+  end
+
+  return CurrentDbVersion() >= target
+end
 
 local function SendTargetedReset(version, target)
   if not target or target == "" then return false end
@@ -1296,6 +1386,18 @@ local function HandleIncoming(prefix, payload, channel, sender)
 
     local stamp = tonumber(p.stamp) or 0
     local dbVersion = tonumber(p.dbv) or tonumber(p.dbVersion) or 0
+
+    local currentVersion = CurrentDbVersion()
+    if dbVersion > 0 and currentVersion >= dbVersion and RepriseHC and RepriseHC._LastResetDbVersion == dbVersion then
+      if stamp ~= 0 then
+        RepriseHC._LastResetStamp = stamp
+      else
+        RepriseHC._LastResetStamp = RepriseHC._LastResetStamp or ((GetServerTime and GetServerTime()) or time())
+      end
+      if RHC_DEBUG then print("|cff99ccff[RHC]|r reset ignored (version already adopted)") end
+      return
+    end
+
     if stamp ~= 0 then
       if RepriseHC._LastResetStamp and stamp == RepriseHC._LastResetStamp then
         if RHC_DEBUG then print("|cff99ccff[RHC]|r reset echo ignored") end
