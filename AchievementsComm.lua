@@ -563,6 +563,12 @@ local function SendDirectToOtherOnline(payload)
 end
 
 SendSnapshotPayload = function(payloadTable, target)
+  if type(payloadTable) == "table" then
+    local current = CurrentDbVersion()
+    if current and current > 0 and payloadTable.dbVersion == nil then
+      payloadTable.dbVersion = current
+    end
+  end
   local wire = BuildWire("SNAP", payloadTable)
   if not wire or wire == "" then return false end
 
@@ -581,6 +587,47 @@ end
 
 local function SendSmallSnapshot()
   SendSnapshotPayload({ kind="SNAP", data=BuildSnapshot() })
+end
+
+local lastResetSentTo = {}
+
+local function SendTargetedReset(version, target)
+  if not target or target == "" then return false end
+  if IsSelf and IsSelf(target) then return false end
+
+  local normalized = CanonicalShort(target)
+  local now = (GetTime and GetTime()) or time()
+  if normalized ~= "" then
+    local last = lastResetSentTo[normalized]
+    if last and (now - last) < 5 then
+      return false
+    end
+    lastResetSentTo[normalized] = now
+  end
+
+  local sig = RepriseHC and RepriseHC._ResetSignature
+  if not sig then return false end
+
+  local dbVersion = tonumber(version) or CurrentDbVersion()
+  if not dbVersion or dbVersion <= 0 then return false end
+
+  local stamp = (GetServerTime and GetServerTime()) or time()
+  local payload = {
+    sig = sig,
+    stamp = stamp,
+    source = SelfId(),
+    dbVersion = dbVersion,
+    dbv = dbVersion,
+  }
+
+  local wire = BuildWire("RESET", payload)
+  if not wire or wire == "" then return false end
+
+  if SendWhisperTargets(wire, target, "RESET ->") then
+    return true
+  end
+
+  return false
 end
 
 local function MergeSnapshot(p)
@@ -614,6 +661,13 @@ local function MergeSnapshot(p)
       db.config.dbVersion = incomingVersion
     end
     EnsureDbVersion(incomingVersion)
+    if lastResetSentTo then
+      if wipe then
+        wipe(lastResetSentTo)
+      else
+        lastResetSentTo = {}
+      end
+    end
     localVersion = incomingVersion
   end
 
@@ -1143,10 +1197,25 @@ local function HandleIncoming(prefix, payload, channel, sender)
       EnsureDbVersion(dbVersion)
     end
 
+    if dbVersion and dbVersion > 0 and lastResetSentTo then
+      if wipe then
+        wipe(lastResetSentTo)
+      else
+        lastResetSentTo = {}
+      end
+    end
+
     haveSnapshot = false
     if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
 
   elseif topic == "REQSNAP" then
+    local requestVersion = tonumber(p.dbVersion) or tonumber(p.dbv) or 0
+    local localVersion = CurrentDbVersion()
+    if sender and sender ~= "" and localVersion > 0 then
+      if requestVersion == 0 or requestVersion < localVersion then
+        SendTargetedReset(localVersion, sender)
+      end
+    end
     SendSnapshotPayload({ kind="SNAP", data=BuildSnapshot() }, sender)
 
   elseif topic == "SNAP" and p and p.data then
