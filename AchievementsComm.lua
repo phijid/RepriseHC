@@ -433,15 +433,15 @@ function BuildSnapshot()
   local deathLogCopy = {}
   for _, entry in ipairs(db.deathLog) do
     if type(entry) == "table" then
-      local copy = {}
-      for k, v in pairs(entry) do copy[k] = v end
-      local entryVersion = tonumber(copy.dbVersion or copy.dbv) or dbVersion
+      local cloned = {}
+      for k, v in pairs(entry) do cloned[k] = v end
+      local entryVersion = tonumber(cloned.dbVersion or cloned.dbv) or dbVersion
       if dbVersion ~= 0 and entryVersion ~= dbVersion then
         entryVersion = dbVersion
       end
-      copy.dbVersion = entryVersion
-      copy.dbv = nil
-      table.insert(deathLogCopy, copy)
+      cloned.dbVersion = entryVersion
+      cloned.dbv = nil
+      table.insert(deathLogCopy, cloned)
     end
   end
 
@@ -601,20 +601,20 @@ local function MergeSnapshot(p)
 
   local function shallowCopy(entry)
     if type(entry) ~= "table" then return nil end
-    local copy = {}
-    for k, v in pairs(entry) do copy[k] = v end
+    local cloned = {}
+    for k, v in pairs(entry) do cloned[k] = v end
     if localVersion ~= 0 then
-      local entryVersion = tonumber(copy.dbVersion or copy.dbv) or localVersion
+      local entryVersion = tonumber(cloned.dbVersion or cloned.dbv) or localVersion
       if entryVersion ~= localVersion then
         entryVersion = localVersion
       end
-      copy.dbVersion = entryVersion
-      copy.dbv = nil
+      cloned.dbVersion = entryVersion
+      cloned.dbv = nil
     else
-      copy.dbVersion = tonumber(copy.dbVersion or copy.dbv) or 0
-      copy.dbv = nil
+      cloned.dbVersion = tonumber(cloned.dbVersion or cloned.dbv) or 0
+      cloned.dbv = nil
     end
-    return copy
+    return cloned
   end
 
   local staged, stagedByNorm = {}, {}
@@ -665,10 +665,10 @@ local function MergeSnapshot(p)
   end
 
   local function appendEntry(entry)
-    local copy = shallowCopy(entry)
-    if not copy then return end
-    table.insert(db.deathLog, copy)
-    markSeen(copy)
+    local cloned = shallowCopy(entry)
+    if not cloned then return end
+    table.insert(db.deathLog, cloned)
+    markSeen(cloned)
   end
 
   for _, entry in ipairs(staged) do
