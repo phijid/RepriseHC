@@ -618,6 +618,21 @@ local function MergeSnapshot(p)
   end
 
   local staged, stagedByNorm = {}, {}
+  local copy = stagedByNorm -- backwards compat for older local naming
+  -- Some legacy builds referenced a local "copy" table when staging snapshot
+  -- entries. Preserve a temporary alias so any outstanding references resolve
+  -- to the same staging map instead of a nil global.
+  local existingGlobalCopy = rawget(_G, "copy")
+  local providedGlobalCopyAlias = false
+  if existingGlobalCopy == nil then
+    _G.copy = stagedByNorm
+    providedGlobalCopyAlias = true
+  end
+  local function releaseCopyAlias()
+    if providedGlobalCopyAlias then
+      _G.copy = existingGlobalCopy
+    end
+  end
   for _, raw in pairs(incoming) do
     local entry = cloneDeathEntry(raw)
     if entry then
@@ -635,7 +650,10 @@ local function MergeSnapshot(p)
     return copy
   end
 
-  if #staged == 0 then return end
+  if #staged == 0 then
+    releaseCopyAlias()
+    return
+  end
 
   table.sort(staged, function(a, b)
     return (a.when or 0) < (b.when or 0)
@@ -733,6 +751,7 @@ local function MergeSnapshot(p)
   table.sort(db.deathLog, function(a, b)
     return (a.when or 0) < (b.when or 0)
   end)
+  releaseCopyAlias()
 end
 
 -- -------- RX dedupe by sender sequence --------
