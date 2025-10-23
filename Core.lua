@@ -5,6 +5,8 @@ RepriseHC.allowedGuilds = { ["Reprise"] = true, ["RepriseHC"] = true, ["Frontier
 
 local DEFAULT_DB_VERSION = 1
 
+local DEFAULT_DB_VERSION = 1
+
 RepriseHC.levelCap = 20
 RepriseHC.levels = {10,20,30,40,50,60}
 RepriseHC.showToGuild = true
