@@ -128,21 +128,38 @@ local function EnsureDbVersion(ver)
       db.config.dbVersion = version
     end
   end
+  local removed = 0
   if RepriseHC and RepriseHC.PruneDeathLogToVersion then
-    local removed = RepriseHC.PruneDeathLogToVersion(version)
-    if removed > 0 and RepriseHC.RefreshUI then
-      RepriseHC.RefreshUI()
-    end
+    local deaths = RepriseHC.PruneDeathLogToVersion(version)
+    if deaths and deaths > 0 then removed = removed + deaths end
+  end
+  if RepriseHC and RepriseHC.PruneAchievementsToVersion then
+    local ach = RepriseHC.PruneAchievementsToVersion(version)
+    if ach and ach > 0 then removed = removed + ach end
+  end
+  if removed > 0 and RepriseHC and RepriseHC.RefreshUI then
+    RepriseHC.RefreshUI()
   end
 end
 
-local function PruneLocalDeathsForCurrentVersion()
-  if not (RepriseHC and RepriseHC.PruneDeathLogToVersion) then return 0 end
-  local removed = RepriseHC.PruneDeathLogToVersion(CurrentDbVersion())
-  if removed > 0 and RepriseHC.RefreshUI then
+local function PruneLocalDataToVersion(version)
+  local removed = 0
+  if RepriseHC and RepriseHC.PruneDeathLogToVersion then
+    local deaths = RepriseHC.PruneDeathLogToVersion(version)
+    if deaths and deaths > 0 then removed = removed + deaths end
+  end
+  if RepriseHC and RepriseHC.PruneAchievementsToVersion then
+    local ach = RepriseHC.PruneAchievementsToVersion(version)
+    if ach and ach > 0 then removed = removed + ach end
+  end
+  if removed > 0 and RepriseHC and RepriseHC.RefreshUI then
     RepriseHC.RefreshUI()
   end
   return removed
+end
+
+local function PruneLocalDataForCurrentVersion()
+  return PruneLocalDataToVersion(CurrentDbVersion())
 end
 
 local function ShouldAcceptIncremental(dbv, sender)
@@ -263,7 +280,7 @@ do
     if ev == "PLAYER_LOGIN" or ev == "PLAYER_ENTERING_WORLD" then
       RefreshSelfIdentity()
       MarkGuildTouched()
-      PruneLocalDeathsForCurrentVersion()
+      PruneLocalDataForCurrentVersion()
     elseif ev == "PLAYER_GUILD_UPDATE" or ev == "GUILD_ROSTER_UPDATE" then
       MarkGuildTouched()
     end
@@ -426,8 +443,78 @@ function BuildSnapshot()
   db.config = db.config or {}
 
   local dbVersion = CurrentDbVersion()
+  if RepriseHC and RepriseHC.PruneAchievementsToVersion then
+    RepriseHC.PruneAchievementsToVersion(dbVersion)
+  end
   if RepriseHC and RepriseHC.PruneDeathLogToVersion then
     RepriseHC.PruneDeathLogToVersion(dbVersion)
+  end
+
+  local charactersCopy = {}
+  for playerKey, entry in pairs(db.characters) do
+    if type(entry) == "table" then
+      if RepriseHC and RepriseHC.NormalizeCharacterAchievements then
+        RepriseHC.NormalizeCharacterAchievements(entry, dbVersion)
+      end
+
+      local clone = {}
+      for k, v in pairs(entry) do
+        if k ~= "achievements" and k ~= "dbv" and k ~= "points" then
+          clone[k] = v
+        end
+      end
+
+      local achClone = {}
+      local totalPoints = 0
+      for achId, ach in pairs(entry.achievements or {}) do
+        if type(ach) == "table" then
+          local achVersion = tonumber(ach.dbVersion or ach.dbv) or dbVersion
+          if dbVersion == 0 or achVersion == dbVersion then
+            local clonedAch = {}
+            for ak, av in pairs(ach) do clonedAch[ak] = av end
+            if dbVersion ~= 0 then
+              clonedAch.dbVersion = dbVersion
+            else
+              clonedAch.dbVersion = achVersion
+            end
+            clonedAch.dbv = nil
+            clonedAch.points = tonumber(clonedAch.points) or 0
+            clonedAch.when = tonumber(clonedAch.when) or 0
+            totalPoints = totalPoints + clonedAch.points
+            achClone[achId] = clonedAch
+          end
+        end
+      end
+
+      clone.achievements = achClone
+      clone.points = totalPoints
+      if dbVersion ~= 0 then
+        clone.dbVersion = dbVersion
+      else
+        clone.dbVersion = tonumber(entry.dbVersion or entry.dbv) or 0
+      end
+      clone.dbv = nil
+      charactersCopy[playerKey] = clone
+    end
+  end
+
+  local guildFirstsCopy = {}
+  for id, info in pairs(db.guildFirsts) do
+    if type(info) == "table" then
+      local entryVersion = tonumber(info.dbVersion or info.dbv) or dbVersion
+      if dbVersion == 0 or entryVersion == dbVersion then
+        local clone = {}
+        for k, v in pairs(info) do clone[k] = v end
+        if dbVersion ~= 0 then
+          clone.dbVersion = dbVersion
+        else
+          clone.dbVersion = entryVersion
+        end
+        clone.dbv = nil
+        clone.when = tonumber(clone.when) or 0
+        guildFirstsCopy[id] = clone
+      end
+    end
   end
 
   local deathLogCopy = {}
@@ -448,8 +535,8 @@ function BuildSnapshot()
   return {
     ver         = RepriseHC.version or "0",
     dbVersion   = dbVersion,
-    characters  = db.characters,
-    guildFirsts = db.guildFirsts,
+    characters  = charactersCopy,
+    guildFirsts = guildFirstsCopy,
     deathLog    = deathLogCopy,
     levelCap    = db.config.levelCap or RepriseHC.levelCap
   }
@@ -540,6 +627,8 @@ local function MergeSnapshot(p)
     db.config.dbVersion = localVersion ~= 0 and localVersion or incomingVersion
   end
 
+  PruneLocalDataToVersion(localVersion)
+
   local function cloneDeathEntry(src)
     if type(src) ~= "table" then return nil end
     local when = tonumber(src.when) or tonumber(src.time)
@@ -573,12 +662,76 @@ local function MergeSnapshot(p)
     }
   end
 
-  for k,v in pairs(p.characters or {}) do
-    local lc = db.characters[k]
-    if not lc or (v.points or 0) > (lc.points or 0) then db.characters[k] = v end
+  for playerKey, incomingChar in pairs(p.characters or {}) do
+    if type(incomingChar) == "table" then
+      db.characters[playerKey] = db.characters[playerKey] or { points = 0, achievements = {} }
+      local dest = db.characters[playerKey]
+      dest.achievements = dest.achievements or {}
+
+      for field, value in pairs(incomingChar) do
+        if field ~= "achievements" and field ~= "points" and field ~= "dbVersion" and field ~= "dbv" then
+          if dest[field] == nil then dest[field] = value end
+        end
+      end
+
+      for achId, ach in pairs(incomingChar.achievements or {}) do
+        if type(ach) == "table" then
+          local entryVersion = tonumber(ach.dbVersion or ach.dbv) or localVersion
+          if localVersion == 0 or entryVersion == localVersion then
+            local clone = {}
+            for ak, av in pairs(ach) do clone[ak] = av end
+            if localVersion ~= 0 then
+              clone.dbVersion = localVersion
+            else
+              clone.dbVersion = entryVersion
+            end
+            clone.dbv = nil
+            clone.points = tonumber(clone.points) or 0
+            clone.when = tonumber(clone.when) or 0
+            dest.achievements[achId] = clone
+          end
+        end
+      end
+
+      if RepriseHC and RepriseHC.NormalizeCharacterAchievements then
+        RepriseHC.NormalizeCharacterAchievements(dest, localVersion)
+      else
+        local total = 0
+        for _, ach in pairs(dest.achievements) do
+          total = total + (tonumber(ach.points) or 0)
+        end
+        dest.points = total
+      end
+
+      if localVersion ~= 0 then
+        dest.dbVersion = localVersion
+      else
+        dest.dbVersion = tonumber(dest.dbVersion or incomingChar.dbVersion or incomingChar.dbv) or 0
+      end
+      dest.dbv = nil
+    end
   end
-  for id,entry in pairs(p.guildFirsts or {}) do
-    if not db.guildFirsts[id] then db.guildFirsts[id] = entry end
+
+  for id, entry in pairs(p.guildFirsts or {}) do
+    if type(entry) == "table" then
+      local entryVersion = tonumber(entry.dbVersion or entry.dbv) or localVersion
+      if localVersion == 0 or entryVersion == localVersion then
+        local clone = {}
+        for k, v in pairs(entry) do clone[k] = v end
+        if localVersion ~= 0 then
+          clone.dbVersion = localVersion
+        else
+          clone.dbVersion = entryVersion
+        end
+        clone.dbv = nil
+        clone.when = tonumber(clone.when) or 0
+
+        local existing = db.guildFirsts[id]
+        if not existing or (tonumber(existing.when) or 0) > clone.when then
+          db.guildFirsts[id] = clone
+        end
+      end
+    end
   end
   
   local incoming = p.deathLog or {}
@@ -641,13 +794,7 @@ local function MergeSnapshot(p)
       if norm ~= "" then
         stagedByNorm[norm] = entry
       end
-      copy.dbVersion = entryVersion
-      copy.dbv = nil
-    else
-      copy.dbVersion = tonumber(copy.dbVersion or copy.dbv) or 0
-      copy.dbv = nil
     end
-    return copy
   end
 
   if #staged == 0 then
@@ -676,6 +823,14 @@ local function MergeSnapshot(p)
     if fb and not seenFallback[fb] then
       seenFallback[fb] = entry
     end
+    local fb = fallbackKey(entry)
+    if fb and not seenFallback[fb] then
+      seenFallback[fb] = entry
+    end
+  end
+
+  for _, existing in ipairs(db.deathLog) do
+    markSeen(existing)
   end
 
   for _, existing in ipairs(db.deathLog) do
@@ -808,17 +963,72 @@ local function HandleIncoming(prefix, payload, channel, sender)
   if topic == "ACH" then
     if not ShouldAcceptIncremental(p.dbv, sender) then return end
     normalizeKeyAndName(p, sender)
+    if not p.id or p.id == "" then return end
 
     local db = SafeDB()
-    db.characters[p.playerKey] = db.characters[p.playerKey] or { points=0, achievements={} }
+    db.characters = db.characters or {}
+    db.guildFirsts = db.guildFirsts or {}
+
+    local targetVersion = CurrentDbVersion()
+    local entryVersion = tonumber(p.dbVersion or p.dbv) or targetVersion
+    if targetVersion ~= 0 then
+      entryVersion = targetVersion
+    end
+
+    local when = tonumber(p.when) or time()
+    local points = tonumber(p.pts) or 0
+
+    db.characters[p.playerKey] = db.characters[p.playerKey] or { points = 0, achievements = {} }
     local c = db.characters[p.playerKey]
-    if not c.achievements[p.id] then
-      c.achievements[p.id] = { name=p.name or p.id, points=p.pts or 0, when=time() }
-      c.points = (c.points or 0) + (p.pts or 0)
+    c.achievements = c.achievements or {}
+
+    c.achievements[p.id] = {
+      name = p.name or p.id,
+      points = points,
+      when = when,
+      dbVersion = entryVersion,
+    }
+
+    if RepriseHC and RepriseHC.NormalizeCharacterAchievements then
+      RepriseHC.NormalizeCharacterAchievements(c, targetVersion)
+    else
+      local total = 0
+      for _, ach in pairs(c.achievements) do
+        total = total + (tonumber(ach.points) or 0)
+      end
+      c.points = total
     end
+
+    if targetVersion ~= 0 then
+      c.dbVersion = targetVersion
+    else
+      c.dbVersion = tonumber(c.dbVersion or c.dbv) or 0
+    end
+    c.dbv = nil
+
     if p.id and p.id:find("^FIRST_" .. RepriseHC.levelCap) then
-      db.guildFirsts[p.id] = db.guildFirsts[p.id] or { winner=p.playerKey, when=time() }
+      local gf = db.guildFirsts[p.id]
+      if not gf then
+        gf = {
+          winner = p.playerKey,
+          winnerName = p.name,
+          when = when,
+          dbVersion = entryVersion,
+        }
+        db.guildFirsts[p.id] = gf
+      else
+        if not gf.winner then gf.winner = p.playerKey end
+        if not gf.winnerName then gf.winnerName = p.name end
+        if not gf.when or gf.when == 0 then gf.when = when end
+        if targetVersion ~= 0 then
+          gf.dbVersion = targetVersion
+        else
+          gf.dbVersion = tonumber(gf.dbVersion or gf.dbv) or entryVersion
+        end
+      end
+      if gf then gf.dbv = nil end
     end
+
     if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
 
   elseif topic == "DEATH" then
@@ -1023,7 +1233,7 @@ end
 
 F:SetScript("OnEvent", function(_, ev)
   if ev == "PLAYER_ENTERING_WORLD" then
-    PruneLocalDeathsForCurrentVersion()
+    PruneLocalDataForCurrentVersion()
     haveSnapshot = false
     C_Timer.After(5,  requestWithBackoff)
     C_Timer.After(15, requestWithBackoff)

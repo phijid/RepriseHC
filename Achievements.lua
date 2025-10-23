@@ -8,6 +8,14 @@ local faction = (UnitFactionGroup and select(1, UnitFactionGroup("player"))) or 
 RepriseHCAchievementsDB = RepriseHCAchievementsDB or { characters = {}, guildFirsts = {}, deathLog = {}, config = {}, groupAssignments = {} }
 local function DB() return RepriseHCAchievementsDB end
 
+local function CurrentDbVersion()
+  if RepriseHC and RepriseHC.GetDbVersion then
+    local ok = tonumber(RepriseHC.GetDbVersion())
+    if ok and ok >= 0 then return ok end
+  end
+  return tonumber(RepriseHC.defaultDbVersion) or 1
+end
+
 -- ========= Printing =========
 local function Print(msg)
   if RepriseHC and RepriseHC.Print then
@@ -119,15 +127,34 @@ function RepriseHC.Ach_GetDungeonBossName(d) return (FINAL_BOSS[d] and FINAL_BOS
 local function EnsureChar()
   local key = PlayerKey()
   DB().characters[key] = DB().characters[key] or { points=0, achievements={} }
-  return DB().characters[key]
+  local entry = DB().characters[key]
+  if RepriseHC and RepriseHC.NormalizeCharacterAchievements then
+    RepriseHC.NormalizeCharacterAchievements(entry, CurrentDbVersion())
+  end
+  return entry
 end
 
 local function EarnAchievement(id, displayName, points)
   if not RepriseHC.IsGuildAllowed() then return false end
   local c = EnsureChar()
+  c.achievements = c.achievements or {}
   if c.achievements[id] then return false end
-  c.achievements[id] = { name = displayName, points = points, when = time() }
-  c.points = (c.points or 0) + (points or 0)
+
+  local now = time()
+  local version = CurrentDbVersion()
+  points = tonumber(points) or 0
+  c.achievements[id] = {
+    name = displayName,
+    points = points,
+    when = now,
+    dbVersion = version,
+  }
+
+  if RepriseHC and RepriseHC.NormalizeCharacterAchievements then
+    RepriseHC.NormalizeCharacterAchievements(c, version)
+  else
+    c.points = (c.points or 0) + (points or 0)
+  end
   return true
 end
 
@@ -135,10 +162,38 @@ end
 local function Broadcast(tag, payload)
   -- Do NOT block transport here; Comm_Send handles routing (GUILD/GROUP/WHISPER).
   if tag == "AWARD" then
-    local playerKey, id, ptsStr, name = payload:match("^([^;]*);([^;]*);([^;]*);?(.*)$")
-    if not playerKey or not id then return end
-    local pts = tonumber(ptsStr or "0") or 0
-    RepriseHC.Comm_Send("ACH", { playerKey=playerKey, id=id, pts=pts, name=name })
+    local data
+    if type(payload) == "table" then
+      data = payload
+    else
+      local playerKey, id, ptsStr, name, whenStr, dbvStr = tostring(payload or ""):match("^([^;]*);([^;]*);([^;]*);?([^;]*);?([^;]*);?([^;]*)$")
+      if not playerKey or not id then return end
+      data = {
+        playerKey = playerKey,
+        id = id,
+        pts = tonumber(ptsStr or "0") or 0,
+        name = name,
+        when = tonumber(whenStr or "0") or time(),
+        dbVersion = tonumber(dbvStr or "0") or CurrentDbVersion(),
+      }
+    end
+
+    if not data or not data.playerKey or not data.id then return end
+
+    local pts = tonumber(data.pts) or 0
+    local when = tonumber(data.when) or time()
+    local dbVersion = tonumber(data.dbVersion or data.dbv) or CurrentDbVersion()
+    if dbVersion < 0 then dbVersion = CurrentDbVersion() end
+
+    RepriseHC.Comm_Send("ACH", {
+      playerKey = data.playerKey,
+      id = data.id,
+      pts = pts,
+      name = data.name,
+      when = when,
+      dbVersion = dbVersion,
+      dbv = dbVersion,
+    })
   elseif tag == "DEAD" then
     local playerKey, levelStr, class, race, zone, subzone, name, whenStr = payload:match("^([^;]*);([^;]*);([^;]*);([^;]*);([^;]*);([^;]*);([^;]*);?(.*)$")
     if not playerKey then return end
@@ -153,7 +208,22 @@ local function Broadcast(tag, payload)
 end
 
 local function SyncBroadcastAward(id, name, pts)
-  Broadcast("AWARD", string.format("%s;%s;%d;%s", PlayerKey(), id, pts or 0, name or ""))
+  local playerKey = PlayerKey()
+  local db = DB()
+  local char = db.characters and db.characters[playerKey]
+  local when = time()
+  if char and char.achievements and char.achievements[id] then
+    when = tonumber(char.achievements[id].when) or when
+  end
+  local dbVersion = CurrentDbVersion()
+  Broadcast("AWARD", {
+    playerKey = playerKey,
+    id = id,
+    pts = pts or 0,
+    name = name,
+    when = when,
+    dbVersion = dbVersion,
+  })
 end
 
 function RepriseHC.SyncBroadcastDeath(level, class, race, zone, subzone, name)
@@ -395,10 +465,24 @@ function RepriseHC.Ach_GuildFirstOptions(faction)
 end
 
 local function LockGuildFirst(id, winnerKey, winnerName)
-  if not (RepriseHC.navigation.guildFirst.enabled) then return end 
+  if not (RepriseHC.navigation.guildFirst.enabled) then return end
   DB().guildFirsts = DB().guildFirsts or {}
-  if not DB().guildFirsts[id] then
-    DB().guildFirsts[id] = { winner = winnerKey, winnerName = winnerName, when = time() }
+  local version = CurrentDbVersion()
+  local existing = DB().guildFirsts[id]
+  if existing then
+    local existingVersion = tonumber(existing.dbVersion or existing.dbv) or 0
+    if version ~= 0 and existingVersion ~= version then
+      DB().guildFirsts[id] = nil
+      existing = nil
+    end
+  end
+  if not existing then
+    DB().guildFirsts[id] = {
+      winner = winnerKey,
+      winnerName = winnerName,
+      when = time(),
+      dbVersion = version,
+    }
     return true
   end
   return false
@@ -463,10 +547,20 @@ end
 -- ========= Earners helper for UI =========
 function RepriseHC.Ach_GetEarners(achId)
   local out = {}
+  local currentVersion = CurrentDbVersion()
   for playerKey, data in pairs(DB().characters or {}) do
     if data.achievements and data.achievements[achId] then
-      local nm = data.achievements[achId].name or achId
-      table.insert(out, { player=playerKey, when=data.achievements[achId].when or 0, points=data.achievements[achId].points or 0, title=nm })
+      local entry = data.achievements[achId]
+      local entryVersion = tonumber(entry.dbVersion or entry.dbv) or 0
+      if currentVersion == 0 or entryVersion == currentVersion then
+        local nm = entry.name or achId
+        table.insert(out, {
+          player = playerKey,
+          when = entry.when or 0,
+          points = entry.points or 0,
+          title = nm,
+        })
+      end
     end
   end
   table.sort(out, function(a,b) return a.when < b.when end)

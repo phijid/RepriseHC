@@ -214,6 +214,87 @@ function RepriseHC.PushDeath(entry)
   dl[#dl+1] = entry
 end
 
+local function NormalizeCharacterAchievements(entry, targetVersion)
+  if type(entry) ~= "table" then return 0, 0 end
+
+  entry.achievements = entry.achievements or {}
+
+  local removed, totalPoints = 0, 0
+  local desiredVersion = tonumber(targetVersion) or 0
+
+  for id, ach in pairs(entry.achievements) do
+    if type(ach) ~= "table" then
+      entry.achievements[id] = nil
+      removed = removed + 1
+    else
+      local achVersion = tonumber(ach.dbVersion or ach.dbv) or 0
+      if desiredVersion ~= 0 and achVersion ~= desiredVersion then
+        entry.achievements[id] = nil
+        removed = removed + 1
+      else
+        if desiredVersion ~= 0 then
+          achVersion = desiredVersion
+        end
+        ach.dbVersion = achVersion
+        ach.dbv = nil
+        ach.points = tonumber(ach.points) or 0
+        ach.when = tonumber(ach.when) or 0
+        totalPoints = totalPoints + ach.points
+      end
+    end
+  end
+
+  entry.points = totalPoints
+
+  if desiredVersion ~= 0 then
+    entry.dbVersion = desiredVersion
+  else
+    local current = tonumber(entry.dbVersion or entry.dbv) or 0
+    entry.dbVersion = current
+  end
+  entry.dbv = nil
+
+  return removed, totalPoints
+end
+
+RepriseHC.NormalizeCharacterAchievements = NormalizeCharacterAchievements
+
+function RepriseHC.PruneAchievementsToVersion(version)
+  local db = RepriseHC.DB and RepriseHC.DB()
+  if not db then return 0 end
+
+  db.characters = db.characters or {}
+  db.guildFirsts = db.guildFirsts or {}
+
+  local targetVersion = tonumber(version) or 0
+  local removed = 0
+
+  for _, entry in pairs(db.characters) do
+    local pruned = NormalizeCharacterAchievements(entry, targetVersion)
+    if pruned and pruned > 0 then
+      removed = removed + pruned
+    end
+  end
+
+  for id, info in pairs(db.guildFirsts) do
+    local entryVersion = tonumber(info and (info.dbVersion or info.dbv)) or 0
+    if targetVersion ~= 0 and entryVersion ~= targetVersion then
+      db.guildFirsts[id] = nil
+      removed = removed + 1
+    else
+      if targetVersion ~= 0 then
+        info.dbVersion = targetVersion
+      else
+        info.dbVersion = entryVersion
+      end
+      info.dbv = nil
+      info.when = tonumber(info.when) or 0
+    end
+  end
+
+  return removed
+end
+
 local function NormalizeDbVersion(ver)
   local num = tonumber(ver)
   if not num then return DEFAULT_DB_VERSION end
@@ -318,6 +399,41 @@ local function HardResetDB(reason, newVersion, opts)
     end)
   end
 
+RepriseHC._HardResetDB = HardResetDB
+
+function RepriseHC.CanRunGlobalReset()
+  local battleTag = GetPlayerBattleTag()
+  if not battleTag then
+    return false, nil, "|cffff6060Reset requires a Battle.net login.|r"
+  end
+  local hash = ComputeBattleTagHash(battleTag)
+  if not hash then
+    return false, nil, "|cffff6060Unable to validate Battle.net identity.|r"
+  end
+  if hash ~= RESET_SIGNATURE then
+    return false, nil, "|cffff6060Reset not permitted for this account.|r"
+  end
+  return true, hash
+end
+
+function RepriseHC.TriggerGlobalReset(signature)
+  if type(signature) ~= "number" or signature ~= RESET_SIGNATURE then return end
+
+  local current = tonumber(RepriseHC.GetDbVersion()) or DEFAULT_DB_VERSION
+  if current == 0 then current = DEFAULT_DB_VERSION end
+  if current < DEFAULT_DB_VERSION then current = DEFAULT_DB_VERSION end
+  local nextVersion = current + 1
+
+  local stamp = GetServerTime and GetServerTime() or time()
+  RepriseHC._LastResetStamp = stamp
+  RepriseHC._LastResetDbVersion = nextVersion
+
+  HardResetDB("|cffff6060Global reset requested.|r", nextVersion)
+
+  if RepriseHC.Comm_Send then
+    local origin = (RepriseHC.GetPlayerKey and RepriseHC.GetPlayerKey()) or (UnitName("player")) or ""
+    RepriseHC.Comm_Send("RESET", { sig = signature, stamp = stamp, source = origin, dbv = nextVersion, dbVersion = nextVersion })
+  end
 end
 
 RepriseHC._HardResetDB = HardResetDB
@@ -424,6 +540,14 @@ Core:SetScript("OnEvent", function(_, event, arg1)
     end
     -- Source of truth is the constant above in this file
     RepriseHCAchievementsDB.config.levelCap = RepriseHC.levelCap or 60
+
+    local currentVersion = RepriseHC.GetDbVersion and RepriseHC.GetDbVersion() or DEFAULT_DB_VERSION
+    if RepriseHC.PruneAchievementsToVersion then
+      RepriseHC.PruneAchievementsToVersion(currentVersion)
+    end
+    if RepriseHC.PruneDeathLogToVersion then
+      RepriseHC.PruneDeathLogToVersion(currentVersion)
+    end
 
   elseif event == "PLAYER_LOGIN" then
     C_ChatInfo.RegisterAddonMessagePrefix("RepriseHC_ACH")
