@@ -137,9 +137,9 @@ end
 
 function RepriseHC.IsGuildAllowed()
   local g = GetGuildInfo("player")
-  if not g then
-    return true
-  end
+  -- if not g then
+  --   return true
+  -- end
   return not not RepriseHC.allowedGuilds[g]
 end
 

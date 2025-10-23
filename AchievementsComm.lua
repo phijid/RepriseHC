@@ -8,6 +8,10 @@ local lastOwnDeathAnnounceAt = 0
 local lastResetStamp
 local haveSnapshot = false
 local lastUpgradeRequestAt = 0
+local lastSnapshotBroadcastAt = 0
+local lastSnapshotRequestAt = 0
+local lastGuildSyncAt = 0
+local PERIODIC_SYNC_INTERVAL = 60
 local SendSnapshotPayload
 local AdoptIncomingVersion
 local DIRECT_ADDON_MAX = 240
@@ -169,6 +173,46 @@ end
 
 local function PruneLocalDataForCurrentVersion()
   return PruneLocalDataToVersion(CurrentDbVersion())
+end
+
+local function Now()
+  if GetTime then return GetTime() end
+  return time()
+end
+
+local function BroadcastFullSnapshot(reason, force)
+  if not (RepriseHC and RepriseHC.Comm_Send and BuildSnapshot) then return end
+  local now = Now()
+  if not force and (now - (lastSnapshotBroadcastAt or 0)) < 10 then return end
+  lastSnapshotBroadcastAt = now
+  local payload = { kind = "SNAP", data = BuildSnapshot() }
+  if reason then payload.reason = reason end
+  RepriseHC.Comm_Send("SNAP", payload)
+end
+
+local function RequestFullSnapshot(reason, force)
+  if not (RepriseHC and RepriseHC.Comm_Send) then return end
+  local now = Now()
+  if not force and (now - (lastSnapshotRequestAt or 0)) < 10 then return end
+  lastSnapshotRequestAt = now
+  local payload = { need = "all" }
+  if reason then payload.reason = reason end
+  local version = CurrentDbVersion()
+  if version and version > 0 then
+    payload.dbVersion = version
+    payload.dbv = version
+  end
+  RepriseHC.Comm_Send("REQSNAP", payload)
+end
+
+local function GuildSync(force, reason)
+  if not IsInGuild or not IsInGuild() then return end
+  local now = Now()
+  if not force and (now - (lastGuildSyncAt or 0)) < 20 then return end
+  lastGuildSyncAt = now
+  local label = reason or "guild"
+  BroadcastFullSnapshot(label, force)
+  RequestFullSnapshot(label, true)
 end
 
 local function ShouldAcceptIncremental(dbv, sender)
@@ -1569,8 +1613,10 @@ F:RegisterEvent("GUILD_ROSTER_UPDATE")
 
 local function requestWithBackoff()
   if haveSnapshot then return end
-  RepriseHC.Comm_Send("REQSNAP", { need="all" })
+  RequestFullSnapshot("login", true)
 end
+
+local wasInGuild
 
 F:SetScript("OnEvent", function(_, ev)
   if ev == "PLAYER_ENTERING_WORLD" then
@@ -1581,12 +1627,22 @@ F:SetScript("OnEvent", function(_, ev)
     C_Timer.After(30, requestWithBackoff)
 
     local function periodic()
-      RepriseHC.Comm_Send("SNAP", { kind="SNAP", data=BuildSnapshot() })
-      C_Timer.After(90, periodic)
+      BroadcastFullSnapshot("periodic", true)
+      C_Timer.After(5, function()
+        RequestFullSnapshot("periodic", true)
+      end)
+      C_Timer.After(PERIODIC_SYNC_INTERVAL, periodic)
     end
     C_Timer.After(20, periodic)
 
   elseif ev == "PLAYER_GUILD_UPDATE" or ev == "GUILD_ROSTER_UPDATE" then
+    local inGuild = IsInGuild and IsInGuild()
+    if wasInGuild == nil then wasInGuild = inGuild end
+    if inGuild then
+      local force = not wasInGuild
+      GuildSync(force, force and "joinedGuild" or "guildUpdate")
+    end
+    wasInGuild = inGuild
     if not haveSnapshot then C_Timer.After(2, requestWithBackoff) end
   end
 end)
