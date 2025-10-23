@@ -5,10 +5,14 @@ RepriseHC.allowedGuilds = { ["Reprise"] = true, ["RepriseHC"] = true, ["Frontier
 
 -- ===== Useful to be global ===== 
 
+local DEFAULT_DB_VERSION = 1
+
 RepriseHC.levelCap = 20
 RepriseHC.levels = {10,20,30,40,50,60}
 RepriseHC.showToGuild = true
 RepriseHC.runtime = RepriseHC.runtime or {}
+
+RepriseHC.defaultDbVersion = DEFAULT_DB_VERSION
 
 RepriseHC.speedrunThresholds = {
   [10] = 2,   -- reach 10 under 2 hours
@@ -210,17 +214,41 @@ function RepriseHC.PushDeath(entry)
   dl[#dl+1] = entry
 end
 
+local function NormalizeDbVersion(ver)
+  local num = tonumber(ver)
+  if not num then return DEFAULT_DB_VERSION end
+  num = math.floor(num)
+  if num == 0 then return 0 end
+  if num < 0 then return DEFAULT_DB_VERSION end
+  if num < DEFAULT_DB_VERSION then return DEFAULT_DB_VERSION end
+  return num
+end
+
 function RepriseHC.GetDbVersion()
-  if not RepriseHCAchievementsDB then return 0 end
+  if not RepriseHCAchievementsDB then return DEFAULT_DB_VERSION end
   local cfg = RepriseHCAchievementsDB.config
-  if not cfg then return 0 end
-  return tonumber(cfg.dbVersion) or 0
+  if not cfg then return DEFAULT_DB_VERSION end
+  local current = tonumber(cfg.dbVersion)
+  if not current then
+    cfg.dbVersion = DEFAULT_DB_VERSION
+    return DEFAULT_DB_VERSION
+  end
+  if current == 0 then return 0 end
+  if current < DEFAULT_DB_VERSION then
+    cfg.dbVersion = DEFAULT_DB_VERSION
+    return DEFAULT_DB_VERSION
+  end
+  return current
 end
 
 function RepriseHC.SetDbVersion(ver)
   RepriseHCAchievementsDB = RepriseHCAchievementsDB or {}
   RepriseHCAchievementsDB.config = RepriseHCAchievementsDB.config or {}
-  RepriseHCAchievementsDB.config.dbVersion = ver or 0
+  if ver == 0 then
+    RepriseHCAchievementsDB.config.dbVersion = 0
+    return
+  end
+  RepriseHCAchievementsDB.config.dbVersion = NormalizeDbVersion(ver)
 end
 
 function RepriseHC.PruneDeathLogToVersion(version)
@@ -262,10 +290,16 @@ local function HardResetDB(reason, newVersion, opts)
   RepriseHCAchievementsDB.groupAssignments = {}
 
   RepriseHCAchievementsDB.config = RepriseHCAchievementsDB.config or {}
-  if newVersion then
-    RepriseHCAchievementsDB.config.dbVersion = newVersion
+  if newVersion ~= nil then
+    if newVersion == 0 then
+      RepriseHCAchievementsDB.config.dbVersion = 0
+    else
+      RepriseHCAchievementsDB.config.dbVersion = NormalizeDbVersion(newVersion)
+    end
   elseif RepriseHCAchievementsDB.config.dbVersion == nil then
-    RepriseHCAchievementsDB.config.dbVersion = 0
+    RepriseHCAchievementsDB.config.dbVersion = DEFAULT_DB_VERSION
+  elseif RepriseHCAchievementsDB.config.dbVersion > 0 and RepriseHCAchievementsDB.config.dbVersion < DEFAULT_DB_VERSION then
+    RepriseHCAchievementsDB.config.dbVersion = DEFAULT_DB_VERSION
   end
 
   local msg = "|cffff6060Cleaned!|r"
@@ -306,14 +340,20 @@ end
 function RepriseHC.TriggerGlobalReset(signature)
   if type(signature) ~= "number" or signature ~= RESET_SIGNATURE then return end
 
+  local current = tonumber(RepriseHC.GetDbVersion()) or DEFAULT_DB_VERSION
+  if current == 0 then current = DEFAULT_DB_VERSION end
+  if current < DEFAULT_DB_VERSION then current = DEFAULT_DB_VERSION end
+  local nextVersion = current + 1
+
   local stamp = GetServerTime and GetServerTime() or time()
   RepriseHC._LastResetStamp = stamp
+  RepriseHC._LastResetDbVersion = nextVersion
 
-  HardResetDB("|cffff6060Global reset requested.|r", stamp)
+  HardResetDB("|cffff6060Global reset requested.|r", nextVersion)
 
   if RepriseHC.Comm_Send then
     local origin = (RepriseHC.GetPlayerKey and RepriseHC.GetPlayerKey()) or (UnitName("player")) or ""
-    RepriseHC.Comm_Send("RESET", { sig = signature, stamp = stamp, source = origin, dbv = stamp })
+    RepriseHC.Comm_Send("RESET", { sig = signature, stamp = stamp, source = origin, dbv = nextVersion, dbVersion = nextVersion })
   end
 end
 
@@ -378,7 +418,9 @@ Core:SetScript("OnEvent", function(_, event, arg1)
       RepriseHCAchievementsDB.config = RepriseHCAchievementsDB.config or {}
     end
     if RepriseHCAchievementsDB.config.dbVersion == nil then
-      RepriseHCAchievementsDB.config.dbVersion = 0
+      RepriseHCAchievementsDB.config.dbVersion = DEFAULT_DB_VERSION
+    elseif RepriseHCAchievementsDB.config.dbVersion > 0 and RepriseHCAchievementsDB.config.dbVersion < DEFAULT_DB_VERSION then
+      RepriseHCAchievementsDB.config.dbVersion = DEFAULT_DB_VERSION
     end
     -- Source of truth is the constant above in this file
     RepriseHCAchievementsDB.config.levelCap = RepriseHC.levelCap or 60
@@ -410,7 +452,10 @@ SlashCmdList["REPRISEHC"] = function(msg)
     if RepriseHC.RebuildGuildCache then RepriseHC.RebuildGuildCache() end
     RepriseHC.Print("Guild roster refreshed.")
   elseif lower == "dbv" then
-    local ver = tonumber(RepriseHC.GetDbVersion and RepriseHC.GetDbVersion()) or 0
+    local ver = DEFAULT_DB_VERSION
+    if RepriseHC.GetDbVersion then
+      ver = RepriseHC.GetDbVersion()
+    end
     RepriseHC.Print(("Current database version: |cff40ff40%d|r"):format(ver))
   elseif lower:match("^reset%s+all$") then
     local ok, signature, err = RepriseHC.CanRunGlobalReset()

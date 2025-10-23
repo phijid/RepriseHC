@@ -9,6 +9,7 @@ local lastResetStamp
 local haveSnapshot = false
 local lastUpgradeRequestAt = 0
 local SendSnapshotPayload
+local DIRECT_ADDON_MAX = 240
 
 local function debugPrint(...)
   if RHC_DEBUG and print then print("|cff99ccff[RHC]|r", ...) end
@@ -328,7 +329,9 @@ local function SendWhisperTargets(payload, name, debugLabel)
     if not IsSelf(target) then
       AceComm:SendCommMessage(PREFIX, payload, "WHISPER", target)
       if C_ChatInfo and C_ChatInfo.SendAddonMessage then
-        C_ChatInfo.SendAddonMessage(PREFIX, payload, "WHISPER", target)
+        if type(payload) == "string" and #payload <= DIRECT_ADDON_MAX then
+          C_ChatInfo.SendAddonMessage(PREFIX, payload, "WHISPER", target)
+        end
       end
       if debugLabel then
         debugPrint(debugLabel, target)
@@ -623,7 +626,13 @@ local function MergeSnapshot(p)
       if norm ~= "" then
         stagedByNorm[norm] = entry
       end
+      copy.dbVersion = entryVersion
+      copy.dbv = nil
+    else
+      copy.dbVersion = tonumber(copy.dbVersion or copy.dbv) or 0
+      copy.dbv = nil
     end
+    return copy
   end
 
   if #staged == 0 then return end
@@ -863,7 +872,7 @@ local function HandleIncoming(prefix, payload, channel, sender)
     end
 
     local stamp = tonumber(p.stamp) or 0
-    local dbVersion = tonumber(p.dbv) or (stamp ~= 0 and stamp or nil)
+    local dbVersion = tonumber(p.dbv) or tonumber(p.dbVersion) or 0
     if stamp ~= 0 then
       if RepriseHC._LastResetStamp and stamp == RepriseHC._LastResetStamp then
         if RHC_DEBUG then print("|cff99ccff[RHC]|r reset echo ignored") end
@@ -872,12 +881,19 @@ local function HandleIncoming(prefix, payload, channel, sender)
       if lastResetStamp and stamp == lastResetStamp then
         return
       end
-      lastResetStamp = dbVersion or stamp
+      lastResetStamp = stamp
     else
-      lastResetStamp = dbVersion or time()
+      if dbVersion > 0 and RepriseHC._LastResetDbVersion and RepriseHC._LastResetDbVersion == dbVersion then
+        if RHC_DEBUG then print("|cff99ccff[RHC]|r duplicate reset version ignored") end
+        return
+      end
+      lastResetStamp = time()
     end
 
     RepriseHC._LastResetStamp = lastResetStamp
+    if dbVersion > 0 then
+      RepriseHC._LastResetDbVersion = dbVersion
+    end
 
     local origin = p.source
     if type(origin) ~= "string" or origin == "" then
@@ -895,7 +911,11 @@ local function HandleIncoming(prefix, payload, channel, sender)
     end
 
     if RepriseHC._HardResetDB then
-      RepriseHC._HardResetDB(reason, dbVersion)
+      if dbVersion > 0 then
+        RepriseHC._HardResetDB(reason, dbVersion)
+      else
+        RepriseHC._HardResetDB(reason)
+      end
     end
 
     if dbVersion and dbVersion > 0 then
