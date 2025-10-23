@@ -644,6 +644,7 @@ SendSnapshotPayload = function(payloadTable, target)
           payloadTable.dbVersion = dataVersion
         end
       end
+      other = name
     end
     if payloadTable.dbVersion == nil then
       payloadTable.dbVersion = 0
