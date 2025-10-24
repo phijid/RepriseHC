@@ -1,8 +1,13 @@
+local DEFAULT_MINIMAP_ANGLE = math.rad(210)
+
 RepriseHCUiDB = RepriseHCUiDB or {
-  minimap = { angle = 0.75 },
+  minimap = { angle = DEFAULT_MINIMAP_ANGLE },
   nav = "leaderboard",
 }
-RepriseHCUiDB.minimap = RepriseHCUiDB.minimap or { angle = 0.75 }
+RepriseHCUiDB.minimap = RepriseHCUiDB.minimap or { angle = DEFAULT_MINIMAP_ANGLE }
+if not RepriseHCUiDB.minimap.angle or math.abs(RepriseHCUiDB.minimap.angle - 0.75) < 1e-3 then
+  RepriseHCUiDB.minimap.angle = DEFAULT_MINIMAP_ANGLE
+end
 
 local function RestoreUiPosition(frame)
   local pos = RepriseHCUiDB.position
@@ -289,7 +294,7 @@ local function EnsureMinimapButton()
     btn:SetFrameStrata("MEDIUM")
     local level = Minimap and Minimap:GetFrameLevel() or 0
     btn:SetFrameLevel(level + 5)
-    Minimap_SetPos(btn, RepriseHCUiDB.minimap.angle or 0.75)
+    Minimap_SetPos(btn, RepriseHCUiDB.minimap.angle or DEFAULT_MINIMAP_ANGLE)
     btn:Show()
     return btn
   end
@@ -309,8 +314,6 @@ local function EnsureMinimapButton()
   btn:SetSize(31, 31)
   btn:SetFrameStrata("MEDIUM")
   btn:SetFrameLevel((Minimap:GetFrameLevel() or 0) + 5)
-  btn:SetIgnoreParentScale(true)
-  btn:SetIgnoreParentAlpha(true)
 
   local ring = btn:CreateTexture(nil, "OVERLAY")
   ring:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
@@ -353,7 +356,7 @@ local function EnsureMinimapButton()
   end)
   btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-  Minimap_SetPos(btn, RepriseHCUiDB.minimap.angle or 0.75)
+  Minimap_SetPos(btn, RepriseHCUiDB.minimap.angle or DEFAULT_MINIMAP_ANGLE)
   btn:Show()
   return btn
 end
