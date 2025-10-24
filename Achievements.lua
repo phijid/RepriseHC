@@ -373,8 +373,7 @@ end
 
 -- ========= Quest Milestones =========
 local QUEST_MILESTONES = {
-  --{ questId = 2561, levelCap = 9,  title = "Druid of the Claw", faction = "Alliance" },
-  { questId = 783, levelCap = 9,  title = "A Threat Within", faction = "Alliance" },
+  { questId = 2561, levelCap = 9,  title = "Druid of the Claw", faction = "Alliance" },
   { questId = 314,  levelCap = 10, title = "Protecting the Herd", faction = "Alliance" },
   { questId = 176,  levelCap = 11, title = "Wanted: Hogger", faction = "Alliance" },
   { questId = 776,  levelCap = 11, title = "Rites of the Earthmother", faction = "Horde" },

@@ -3,7 +3,7 @@
 -- Prefix: RepriseHC_ACH
 
 local PREFIX = "RepriseHC_ACH"
-local RHC_DEBUG = true  -- set true to print who we whisper
+local RHC_DEBUG = false
 local lastOwnDeathAnnounceAt = 0
 local lastResetStamp
 local haveSnapshot = false
