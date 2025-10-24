@@ -249,8 +249,8 @@ SlashCmdList["RHCU"] = function()
   if RepriseHC_UI:IsShown() then
     RepriseHC_UI:Hide()
   else
-    if CreateMinimapButton then
-      CreateMinimapButton()
+    if EnsureMinimapButton then
+      EnsureMinimapButton()
     end
     RestoreUiPosition(UI)
     RepriseHC_UI:Show()
@@ -269,15 +269,48 @@ UI:RegisterEvent("CHAT_MSG_ADDON")
 
 -- Minimap button
 local function Minimap_SetPos(btn, angle)
-  local radius = (Minimap:GetWidth()/2) + 5
-  btn:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle)*radius, math.sin(angle)*radius)
+  if not btn then return end
+  local parent = Minimap or UIParent
+  local radius = 80
+  if Minimap and Minimap:GetWidth() and Minimap:GetWidth() > 0 then
+    radius = (Minimap:GetWidth() / 2) + 5
+  end
+  btn:ClearAllPoints()
+  btn:SetPoint("CENTER", parent, "CENTER", math.cos(angle) * radius, math.sin(angle) * radius)
 end
-local function CreateMinimapButton()
-  if RepriseHC_MinimapButton then return end
+
+local minimapRetryPending
+local function EnsureMinimapButton()
+  if RepriseHC_MinimapButton and RepriseHC_MinimapButton:IsObjectType("Button") then
+    local btn = RepriseHC_MinimapButton
+    if btn:GetParent() ~= (Minimap or UIParent) then
+      btn:SetParent(Minimap or UIParent)
+    end
+    btn:SetFrameStrata("MEDIUM")
+    local level = Minimap and Minimap:GetFrameLevel() or 0
+    btn:SetFrameLevel(level + 5)
+    Minimap_SetPos(btn, RepriseHCUiDB.minimap.angle or 0.75)
+    btn:Show()
+    return btn
+  end
+
+  if not Minimap or not Minimap:GetWidth() or Minimap:GetWidth() == 0 then
+    if not minimapRetryPending then
+      minimapRetryPending = true
+      C_Timer.After(1, function()
+        minimapRetryPending = false
+        EnsureMinimapButton()
+      end)
+    end
+    return nil
+  end
+
   local btn = CreateFrame("Button", "RepriseHC_MinimapButton", Minimap)
   btn:SetSize(31, 31)
   btn:SetFrameStrata("MEDIUM")
   btn:SetFrameLevel((Minimap:GetFrameLevel() or 0) + 5)
+  btn:SetIgnoreParentScale(true)
+  btn:SetIgnoreParentAlpha(true)
 
   local ring = btn:CreateTexture(nil, "OVERLAY")
   ring:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
@@ -306,7 +339,7 @@ local function CreateMinimapButton()
     if RepriseHC_UI:IsShown() then
       RepriseHC_UI:Hide()
     else
-      CreateMinimapButton()
+      EnsureMinimapButton()
       RestoreUiPosition(UI)
       RepriseHC_UI:Show(); UI:Refresh(); RefreshSidebar()
     end
@@ -322,6 +355,7 @@ local function CreateMinimapButton()
 
   Minimap_SetPos(btn, RepriseHCUiDB.minimap.angle or 0.75)
   btn:Show()
+  return btn
 end
 
 local Init = CreateFrame("Frame")
@@ -329,7 +363,7 @@ Init:RegisterEvent("PLAYER_LOGIN")
 Init:RegisterEvent("PLAYER_ENTERING_WORLD")
 Init:SetScript("OnEvent", function(_, event)
   if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
-    CreateMinimapButton()
+    EnsureMinimapButton()
   end
 end)
 
@@ -337,7 +371,7 @@ end)
 -- ========= Centralized Handlers for UI shell/minimap =========
 local function __RHC_UI_OnEvent(event, ...)
   if event == "PLAYER_LOGIN" then
-    if CreateMinimapButton then CreateMinimapButton() end
+    if EnsureMinimapButton then EnsureMinimapButton() end
   elseif event == "CHAT_MSG_ADDON" then
     local prefix = ...
     if prefix == "RepriseHC_ACH" and RepriseHC_UI and RepriseHC_UI:IsShown() then
@@ -347,4 +381,6 @@ local function __RHC_UI_OnEvent(event, ...)
 end
 RepriseHC.RegisterEvent("PLAYER_LOGIN", __RHC_UI_OnEvent); RepriseHC._EnsureEvent("PLAYER_LOGIN")
 RepriseHC.RegisterEvent("CHAT_MSG_ADDON", __RHC_UI_OnEvent); RepriseHC._EnsureEvent("CHAT_MSG_ADDON")
+
+RepriseHC.EnsureMinimapButton = EnsureMinimapButton
 
