@@ -5,8 +5,24 @@ RepriseHC.allowedGuilds = { ["Reprise"] = true, ["Midnight Guardians"] = true }
 
 local DEFAULT_DB_VERSION = 1
 
-RepriseHC.levelCap = 2
-RepriseHC.levels = {2,10,20,30,40,50,60}
+RepriseHC.levelCap = 20
+RepriseHC.levels = {10,20,30,40,50,60}
+local function EnsureLevelMilestones()
+  local cap = tonumber(RepriseHC.levelCap) or 0
+  if cap <= 0 then return end
+  local found = false
+  for _, threshold in ipairs(RepriseHC.levels) do
+    if threshold == cap then
+      found = true
+      break
+    end
+  end
+  if not found then
+    table.insert(RepriseHC.levels, cap)
+    table.sort(RepriseHC.levels)
+  end
+end
+EnsureLevelMilestones()
 RepriseHC.showToGuild = true
 RepriseHC.runtime = RepriseHC.runtime or {}
 RepriseHC.defaultDbVersion = DEFAULT_DB_VERSION
