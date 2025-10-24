@@ -9,6 +9,7 @@ local lastResetStamp
 local haveSnapshot = false
 local lastUpgradeRequestAt = 0
 local lastSnapshotBroadcastAt = 0
+local lastPostChangeSnapshotAt = 0
 local lastSnapshotRequestAt = 0
 local lastGuildSyncAt = 0
 local PERIODIC_SYNC_INTERVAL = 60
@@ -776,6 +777,34 @@ end
 
 local function SendSmallSnapshot()
   SendSnapshotPayload({ kind="SNAP", data=BuildSnapshot() })
+end
+
+local POST_CHANGE_SNAPSHOT_MIN_INTERVAL = 5
+local POST_CHANGE_SNAPSHOT_DELAY = 1.25
+
+local function SchedulePostChangeSnapshot(reason)
+  if not SendSnapshotPayload or not BuildSnapshot then return end
+  local now = Now()
+  if lastPostChangeSnapshotAt and (now - lastPostChangeSnapshotAt) < POST_CHANGE_SNAPSHOT_MIN_INTERVAL then
+    return
+  end
+  lastPostChangeSnapshotAt = now
+
+  local label = reason or "postChange"
+  local function dispatch()
+    local payload = { kind = "SNAP", data = BuildSnapshot(), reason = label }
+    SendSnapshotPayload(payload)
+  end
+
+  if C_Timer and C_Timer.After then
+    C_Timer.After(POST_CHANGE_SNAPSHOT_DELAY, dispatch)
+  else
+    dispatch()
+  end
+end
+
+function RepriseHC.Comm_SchedulePostChangeSnapshot(reason)
+  SchedulePostChangeSnapshot(reason)
 end
 
 local lastResetSentTo = {}
@@ -1774,6 +1803,10 @@ function RepriseHC.Comm_Send(topic, payloadTable)
       peers = 5
     end
     SendWhisperFallback(wire, peers)
+  end
+
+  if topic == "ACH" or topic == "GROUP" then
+    SchedulePostChangeSnapshot(topic)
   end
 
   if topic == "DEATH" then
