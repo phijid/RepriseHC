@@ -1,0 +1,42 @@
+{
+    "Lua.runtime.version": "Lua 5.1",
+    "Lua.runtime.builtin": {
+        "basic": "disable",
+        "debug": "disable",
+        "io": "disable",
+        "math": "disable",
+        "os": "disable",
+        "package": "disable",
+        "string": "disable",
+        "table": "disable",
+        "utf8": "disable"
+    },
+    "Lua.workspace.library": [
+        "~\\.vscode\\extensions\\ketho.wow-api-0.21.0\\Annotations\\Core"
+    ],
+    "Lua.diagnostics.globals": [
+        "SlashCmdList",
+        "DEFAULT_CHAT_FRAME",
+        "COMBATLOG_OBJECT_AFFILIATION_MINE",
+        "COMBATLOG_OBJECT_AFFILIATION_PARTY",
+        "COMBATLOG_OBJECT_AFFILIATION_RAID",
+        "OpenMail_Update",
+        "UIErrorsFrame",
+        "OpenMailFrame",
+        "SOUNDKIT",
+        "InspectFrame",
+        "CharacterFrame",
+        "PaperDollFrame",
+        "PaperDollFrame_SetLevel",
+        "InspectPaperDollFrame_SetLevel",
+        "UIDropDownMenu_SetWidth",
+        "UIDropDownMenu_Initialize",
+        "UIDropDownMenu_SetSelectedValue",
+        "UIDropDownMenu_SetText",
+        "GROUPS",
+        "UIDropDownMenu_AddButton",
+        "UIDropDownMenu_CreateInfo",
+        "STANDARD_TEXT_FONT"
+    ],
+    "Lua.type.weakUnionCheck": true
+}

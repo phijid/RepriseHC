@@ -2,7 +2,7 @@
 ## Interface: 11507
 ## Notes: Reprise Hardcore guild addon
 ## Author: Phijid
-## Version: 0.2.0a
+## Version: 0.6.0b
 ## OptionalDeps: Ace3
 ## X-Embeds: Ace3
 ## SavedVariables: RepriseHCAchievementsDB, RepriseHCUiDB
