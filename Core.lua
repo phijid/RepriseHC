@@ -5,14 +5,15 @@ RepriseHC.allowedGuilds = { ["Reprise"] = true, ["Midnight Guardians"] = true }
 
 local DEFAULT_DB_VERSION = 1
 
-RepriseHC.levelCap = 12
-RepriseHC.levels = {10,20,30,40,50,60}
+RepriseHC.levelCap = 2
+RepriseHC.levels = {2,10,20,30,40,50,60}
 RepriseHC.showToGuild = true
 RepriseHC.runtime = RepriseHC.runtime or {}
 RepriseHC.defaultDbVersion = DEFAULT_DB_VERSION
 RepriseHC.AchievementTesting = false
 
 RepriseHC.speedrunThresholds = {
+  [2]  = 1,
   [10] = 2,
   [20] = 12,
   [30] = 27,
@@ -62,7 +63,7 @@ RepriseHC.professions = {
 }
 
 RepriseHC.profThreshold = {
-  { levelRequirement = 5,  threshold = 75 },
+  { levelRequirement = 1,  threshold = 75 },
   { levelRequirement = 10, threshold = 150 },
   { levelRequirement = 20, threshold = 225 },
   { levelRequirement = 35, threshold = 300 },
