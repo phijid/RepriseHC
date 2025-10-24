@@ -1,7 +1,17 @@
 local ADDON = "RepriseHC"
 RepriseHC = RepriseHC or {}
 
-local maxMilestone = (RepriseHC.MaxMilestone and RepriseHC.MaxMilestone()) or (math.floor(math.max(0, (RepriseHC.levelCap or 60)) / 10) * 10)
+local maxMilestone = math.max(
+  (RepriseHC.MaxMilestone and RepriseHC.MaxMilestone()) or (math.floor(math.max(0, (RepriseHC.levelCap or 60)) / 10) * 10),
+  RepriseHC.levelCap or 0
+)
+local levelMilestones = {}
+if type(RepriseHC.levels) == "table" then
+  for _, threshold in ipairs(RepriseHC.levels) do
+    table.insert(levelMilestones, threshold)
+  end
+end
+table.sort(levelMilestones)
 local faction = (UnitFactionGroup and select(1, UnitFactionGroup("player"))) or "Alliance"
 
 -- ========= DB =========
@@ -233,9 +243,9 @@ function RepriseHC.SyncBroadcastDeath(level, class, race, zone, subzone, name)
 end
 
 -- ========= Level/Professions =========
-function RepriseHC.Ach_AwardLevelsUpTo(level) 
-  if not (RepriseHC.navigation.level.enabled) then return end 
-  for _, th in ipairs(RepriseHC.levels) do
+function RepriseHC.Ach_AwardLevelsUpTo(level)
+  if not (RepriseHC.navigation.level.enabled) then return end
+  for _, th in ipairs(levelMilestones) do
     if level >= th and th <= maxMilestone then
       local id = "LEVEL_"..th
       local nm = "Reached Level "..th
@@ -710,6 +720,20 @@ local function UpdateInstanceState()
   inPartyInstance = (instanceType == "party")
 end
 
+local function TryGuildFirstsIfReady(levelOverride)
+  if not (RepriseHC and RepriseHC.Ach_TryGuildFirsts) then return end
+  if not (RepriseHC.navigation and RepriseHC.navigation.guildFirst and RepriseHC.navigation.guildFirst.enabled) then return end
+  if not (RepriseHC.IsGuildAllowed and RepriseHC.IsGuildAllowed()) then return end
+  local cap = tonumber(RepriseHC.levelCap) or 0
+  if cap <= 0 then return end
+  local lvl = tonumber(levelOverride)
+  if not lvl then
+    lvl = UnitLevel and UnitLevel("player") or 0
+  end
+  if (lvl or 0) < cap then return end
+  RepriseHC.Ach_TryGuildFirsts()
+end
+
 local function OnCombatLogEvent()
   if not (RepriseHC.navigation.dungeons.enabled) then return end
   if not RepriseHC.IsGuildAllowed() then return end
@@ -748,9 +772,9 @@ local function __RHC_Ach_OnEvent(event, ...)
           local level = UnitLevel("player") or 1
           if RepriseHC.Ach_AwardLevelsUpTo then RepriseHC.Ach_AwardLevelsUpTo(level) end
           if RepriseHC.Ach_CheckProfessions then RepriseHC.Ach_CheckProfessions(true) end
-          if level >= RepriseHC.levelCap and RepriseHC.Ach_TryGuildFirsts then RepriseHC.Ach_TryGuildFirsts() end
           if RepriseHC.Ach_CheckSpeedrunOnDing then RepriseHC.Ach_CheckSpeedrunOnDing(math.floor(level / 10) * 10) end
         end
+        TryGuildFirstsIfReady()
       end
     end)
   elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
@@ -760,7 +784,7 @@ local function __RHC_Ach_OnEvent(event, ...)
     if RepriseHC.IsGuildAllowed and RepriseHC.IsGuildAllowed() then
       if RepriseHC.Ach_AwardLevelsUpTo then RepriseHC.Ach_AwardLevelsUpTo(level or UnitLevel("player") or 1) end
       if RepriseHC.Ach_CheckSpeedrunOnDing then RepriseHC.Ach_CheckSpeedrunOnDing(level or UnitLevel("player") or 1) end
-      if (level or 0) >= RepriseHC.levelCap and RepriseHC.Ach_TryGuildFirsts then RepriseHC.Ach_TryGuildFirsts() end
+      TryGuildFirstsIfReady(level)
     end
   elseif event == "TIME_PLAYED_MSG" then
     local total = ...
@@ -777,6 +801,8 @@ local function __RHC_Ach_OnEvent(event, ...)
     if RepriseHC.IsGuildAllowed and questID then
       RepriseHC.Ach_CheckQuest(questID)
     end
+  elseif event == "PLAYER_GUILD_UPDATE" then
+    C_Timer.After(0.5, function() TryGuildFirstsIfReady() end)
   end
 end
 
@@ -788,3 +814,4 @@ RepriseHC.RegisterEvent("TIME_PLAYED_MSG", __RHC_Ach_OnEvent); RepriseHC._Ensure
 RepriseHC.RegisterEvent("SKILL_LINES_CHANGED", __RHC_Ach_OnEvent); RepriseHC._EnsureEvent("SKILL_LINES_CHANGED")
 RepriseHC.RegisterEvent("PLAYER_DEAD", __RHC_Ach_OnEvent); RepriseHC._EnsureEvent("PLAYER_DEAD")
 RepriseHC.RegisterEvent("QUEST_TURNED_IN", __RHC_Ach_OnEvent); RepriseHC._EnsureEvent("QUEST_TURNED_IN")
+RepriseHC.RegisterEvent("PLAYER_GUILD_UPDATE", __RHC_Ach_OnEvent); RepriseHC._EnsureEvent("PLAYER_GUILD_UPDATE")
