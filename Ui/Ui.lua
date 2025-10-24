@@ -2,10 +2,52 @@ RepriseHCUiDB = RepriseHCUiDB or {
   minimap = { angle = 0.75 },
   nav = "leaderboard",
 }
+RepriseHCUiDB.minimap = RepriseHCUiDB.minimap or { angle = 0.75 }
+
+local function RestoreUiPosition(frame)
+  local pos = RepriseHCUiDB.position
+  frame:ClearAllPoints()
+  if pos and pos.point and pos.relativePoint and pos.x and pos.y then
+    frame:SetPoint(pos.point, UIParent, pos.relativePoint, pos.x, pos.y)
+  else
+    frame:SetPoint("CENTER")
+  end
+end
+
+local function SaveUiPosition(frame)
+  if not frame then return end
+  local point, _, relativePoint, xOfs, yOfs = frame:GetPoint(1)
+  if not point then return end
+  RepriseHCUiDB.position = {
+    point = point,
+    relativePoint = relativePoint,
+    x = xOfs,
+    y = yOfs,
+  }
+end
 
 -- ==== UI Shell ====
 local UI = CreateFrame("Frame", "RepriseHC_UI", UIParent, "BackdropTemplate")
-UI:SetSize(900, 560); UI:SetPoint("CENTER"); UI:Hide()
+UI:SetSize(900, 560)
+RestoreUiPosition(UI)
+UI:Hide()
+UI:SetMovable(true)
+UI:EnableMouse(true)
+UI:SetClampedToScreen(true)
+UI:RegisterForDrag("LeftButton")
+UI:SetScript("OnDragStart", function(self)
+  if self:IsMovable() then
+    self:StartMoving()
+  end
+end)
+UI:SetScript("OnDragStop", function(self)
+  self:StopMovingOrSizing()
+  SaveUiPosition(self)
+end)
+UI:SetScript("OnHide", function(self)
+  self:StopMovingOrSizing()
+  SaveUiPosition(self)
+end)
 UI:SetBackdrop({
   bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
   edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -27,6 +69,35 @@ UI.titleFS:SetTextColor(1, .82, 0, 1)
 
 local close = CreateFrame("Button", nil, UI, "UIPanelCloseButton")
 close:SetPoint("TOPRIGHT", 2, 2)
+close:SetScript("OnClick", function() UI:Hide() end)
+
+UISpecialFrames = UISpecialFrames or {}
+local escFound
+for i = 1, #UISpecialFrames do
+  if UISpecialFrames[i] == "RepriseHC_UI" then
+    escFound = true
+    break
+  end
+end
+if not escFound then
+  table.insert(UISpecialFrames, "RepriseHC_UI")
+end
+
+local dragHandle = CreateFrame("Frame", nil, UI)
+dragHandle:SetPoint("TOPLEFT", UI, "TOPLEFT", 0, 0)
+dragHandle:SetPoint("TOPRIGHT", UI, "TOPRIGHT", -40, 0)
+dragHandle:SetHeight(36)
+dragHandle:EnableMouse(true)
+dragHandle:RegisterForDrag("LeftButton")
+dragHandle:SetScript("OnDragStart", function()
+  if UI:IsMovable() then
+    UI:StartMoving()
+  end
+end)
+dragHandle:SetScript("OnDragStop", function()
+  UI:StopMovingOrSizing()
+  SaveUiPosition(UI)
+end)
 
 local Sidebar = CreateFrame("Frame", nil, UI, "BackdropTemplate")
 Sidebar:SetSize(210, 520)
@@ -164,24 +235,82 @@ local function RefreshSidebar()
   end
 end
 
-SLASH_RHCU1 = "/rhcu"
-SlashCmdList["RHCU"] = function()
-  if RepriseHC_UI:IsShown() then RepriseHC_UI:Hide() else RepriseHC_UI:Show(); UI:Refresh(); RefreshSidebar() end
+function RepriseHC.UIRefresh()
+  if UI and UI.Refresh then
+    UI:Refresh()
+  end
+  if RefreshSidebar then
+    RefreshSidebar()
+  end
 end
 
-UI:SetScript("OnShow", function() UI:Refresh(); RefreshSidebar() end)
+SLASH_RHCU1 = "/rhcu"
+SlashCmdList["RHCU"] = function()
+  if RepriseHC_UI:IsShown() then
+    RepriseHC_UI:Hide()
+  else
+    if EnsureMinimapButton then
+      EnsureMinimapButton()
+    end
+    RestoreUiPosition(UI)
+    RepriseHC_UI:Show()
+    UI:Refresh()
+    RefreshSidebar()
+  end
+end
+
+UI:SetScript("OnShow", function()
+  RestoreUiPosition(UI)
+  UI:Refresh()
+  RefreshSidebar()
+end)
 
 UI:RegisterEvent("CHAT_MSG_ADDON")
 
 -- Minimap button
 local function Minimap_SetPos(btn, angle)
-  local radius = (Minimap:GetWidth()/2) + 5
-  btn:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle)*radius, math.sin(angle)*radius)
+  if not btn then return end
+  local parent = Minimap or UIParent
+  local radius = 80
+  if Minimap and Minimap:GetWidth() and Minimap:GetWidth() > 0 then
+    radius = (Minimap:GetWidth() / 2) + 5
+  end
+  btn:ClearAllPoints()
+  btn:SetPoint("CENTER", parent, "CENTER", math.cos(angle) * radius, math.sin(angle) * radius)
 end
-local function CreateMinimapButton()
-  if RepriseHC_MinimapButton then return end
+
+local minimapRetryPending
+local function EnsureMinimapButton()
+  if RepriseHC_MinimapButton and RepriseHC_MinimapButton:IsObjectType("Button") then
+    local btn = RepriseHC_MinimapButton
+    if btn:GetParent() ~= (Minimap or UIParent) then
+      btn:SetParent(Minimap or UIParent)
+    end
+    btn:SetFrameStrata("MEDIUM")
+    local level = Minimap and Minimap:GetFrameLevel() or 0
+    btn:SetFrameLevel(level + 5)
+    Minimap_SetPos(btn, RepriseHCUiDB.minimap.angle or 0.75)
+    btn:Show()
+    return btn
+  end
+
+  if not Minimap or not Minimap:GetWidth() or Minimap:GetWidth() == 0 then
+    if not minimapRetryPending then
+      minimapRetryPending = true
+      C_Timer.After(1, function()
+        minimapRetryPending = false
+        EnsureMinimapButton()
+      end)
+    end
+    return nil
+  end
+
   local btn = CreateFrame("Button", "RepriseHC_MinimapButton", Minimap)
-  btn:SetSize(31, 31); btn:SetFrameStrata("MEDIUM")
+  btn:SetSize(31, 31)
+  btn:SetFrameStrata("MEDIUM")
+  btn:SetFrameLevel((Minimap:GetFrameLevel() or 0) + 5)
+  btn:SetIgnoreParentScale(true)
+  btn:SetIgnoreParentAlpha(true)
 
   local ring = btn:CreateTexture(nil, "OVERLAY")
   ring:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
@@ -207,7 +336,11 @@ local function CreateMinimapButton()
     Minimap_SetPos(self, RepriseHCUiDB.minimap.angle)
   end)
   btn:SetScript("OnClick", function()
-    if RepriseHC_UI:IsShown() then RepriseHC_UI:Hide() else
+    if RepriseHC_UI:IsShown() then
+      RepriseHC_UI:Hide()
+    else
+      EnsureMinimapButton()
+      RestoreUiPosition(UI)
       RepriseHC_UI:Show(); UI:Refresh(); RefreshSidebar()
     end
   end)
@@ -221,16 +354,24 @@ local function CreateMinimapButton()
   btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
   Minimap_SetPos(btn, RepriseHCUiDB.minimap.angle or 0.75)
+  btn:Show()
+  return btn
 end
 
 local Init = CreateFrame("Frame")
 Init:RegisterEvent("PLAYER_LOGIN")
+Init:RegisterEvent("PLAYER_ENTERING_WORLD")
+Init:SetScript("OnEvent", function(_, event)
+  if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
+    EnsureMinimapButton()
+  end
+end)
 
 
 -- ========= Centralized Handlers for UI shell/minimap =========
 local function __RHC_UI_OnEvent(event, ...)
   if event == "PLAYER_LOGIN" then
-    if CreateMinimapButton then CreateMinimapButton() end
+    if EnsureMinimapButton then EnsureMinimapButton() end
   elseif event == "CHAT_MSG_ADDON" then
     local prefix = ...
     if prefix == "RepriseHC_ACH" and RepriseHC_UI and RepriseHC_UI:IsShown() then
@@ -240,4 +381,6 @@ local function __RHC_UI_OnEvent(event, ...)
 end
 RepriseHC.RegisterEvent("PLAYER_LOGIN", __RHC_UI_OnEvent); RepriseHC._EnsureEvent("PLAYER_LOGIN")
 RepriseHC.RegisterEvent("CHAT_MSG_ADDON", __RHC_UI_OnEvent); RepriseHC._EnsureEvent("CHAT_MSG_ADDON")
+
+RepriseHC.EnsureMinimapButton = EnsureMinimapButton
 
