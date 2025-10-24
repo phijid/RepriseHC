@@ -1807,6 +1807,23 @@ function RepriseHC.Comm_Send(topic, payloadTable)
 
   if topic == "ACH" or topic == "GROUP" then
     SchedulePostChangeSnapshot(topic)
+
+    -- Even when the guild route succeeds, follow up with a handful of
+    -- whispers so peers that haven't finished joining guild chat yet still
+    -- receive the incremental payload.
+    local peerCount = (topic == "GROUP") and 8 or 6
+    SendWhisperFallback(wire, peerCount)
+
+    -- Death announcements resend small snapshots a few seconds later which is
+    -- why they recover so reliably after reloads.  Mirror that behaviour for
+    -- achievements and group changes so the refreshed standings propagate
+    -- without requiring a manual /reload.
+    if C_Timer and C_Timer.After then
+      C_Timer.After(6, SendSmallSnapshot)
+      C_Timer.After(18, SendSmallSnapshot)
+    else
+      SendSmallSnapshot()
+    end
   end
 
   if topic == "DEATH" then
