@@ -727,18 +727,27 @@ local function UpdateInstanceState()
   inPartyInstance = (instanceType == "party")
 end
 
+local pendingGuildFirstLevel = nil
+
 local function TryGuildFirstsIfReady(levelOverride)
+  local cap = tonumber(RepriseHC and RepriseHC.levelCap) or 0
+  if cap <= 0 then return end
+
+  local lvlOverrideNumber = tonumber(levelOverride)
+  if lvlOverrideNumber and lvlOverrideNumber >= cap then
+    pendingGuildFirstLevel = lvlOverrideNumber
+  end
+
+  local lvl = lvlOverrideNumber or pendingGuildFirstLevel
+  if not lvl then return end
+  if lvl < cap then return end
+
   if not (RepriseHC and RepriseHC.Ach_TryGuildFirsts) then return end
   if not (RepriseHC.navigation and RepriseHC.navigation.guildFirst and RepriseHC.navigation.guildFirst.enabled) then return end
   if not (RepriseHC.IsGuildAllowed and RepriseHC.IsGuildAllowed()) then return end
-  local cap = tonumber(RepriseHC.levelCap) or 0
-  if cap <= 0 then return end
-  local lvl = tonumber(levelOverride)
-  if not lvl then
-    lvl = UnitLevel and UnitLevel("player") or 0
-  end
-  if (lvl or 0) < cap then return end
+
   RepriseHC.Ach_TryGuildFirsts(lvl)
+  pendingGuildFirstLevel = nil
 end
 
 local function OnCombatLogEvent()
@@ -780,6 +789,7 @@ local function __RHC_Ach_OnEvent(event, ...)
           if RepriseHC.Ach_AwardLevelsUpTo then RepriseHC.Ach_AwardLevelsUpTo(level) end
           if RepriseHC.Ach_CheckProfessions then RepriseHC.Ach_CheckProfessions(true) end
           if RepriseHC.Ach_CheckSpeedrunOnDing then RepriseHC.Ach_CheckSpeedrunOnDing(math.floor(level / 10) * 10) end
+          TryGuildFirstsIfReady(level)
         end
         TryGuildFirstsIfReady()
       end
