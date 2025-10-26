@@ -1766,7 +1766,7 @@ local function HandleIncoming(prefix, payload, channel, sender)
   elseif topic == "SNAP" and p and p.data then
     MergeSnapshot(p.data)
     haveSnapshot = true
-    if RepriseHC.Print then RepriseHC.Print("Synchronized snapshot.") end
+    if RepriseHC.Print and RHC_DEBUG then RepriseHC.Print("Synchronized snapshot.") end
     if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
   end
 end
