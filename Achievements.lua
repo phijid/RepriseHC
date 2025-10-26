@@ -780,8 +780,8 @@ local function __RHC_Ach_OnEvent(event, ...)
           if RepriseHC.Ach_AwardLevelsUpTo then RepriseHC.Ach_AwardLevelsUpTo(level) end
           if RepriseHC.Ach_CheckProfessions then RepriseHC.Ach_CheckProfessions(true) end
           if RepriseHC.Ach_CheckSpeedrunOnDing then RepriseHC.Ach_CheckSpeedrunOnDing(math.floor(level / 10) * 10) end
+          TryGuildFirstsIfReady()
         end
-        TryGuildFirstsIfReady()
       end
     end)
   elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
