@@ -204,10 +204,18 @@ function RepriseHC.RenderCategory(page, catName)
   elseif catName == "Guild First" then
     local order = { ALL = 1, CLASS = 2, RACE = 3 }
     table.sort(list, function(a,b)
-      local oa = order[a.gfType or "RACE"] or 3
-      local ob = order[b.gfType or "RACE"] or 3
-      if oa == ob then return (a.gfKey or a.name) < (b.gfKey or b.name) end
-      return oa < ob
+      local ta = order[a.gfType or "RACE"] or 3
+      local tb = order[b.gfType or "RACE"] or 3
+      if ta ~= tb then return ta < tb end
+      local oa = tonumber(a.gfOrder or 0) or 0
+      local ob = tonumber(b.gfOrder or 0) or 0
+      if oa ~= ob then return oa < ob end
+      local ca = tonumber(a.levelCap or a.cap or 0) or 0
+      local cb = tonumber(b.levelCap or b.cap or 0) or 0
+      if ca ~= cb then return ca < cb end
+      local ka = tostring(a.gfKey or a.name or "")
+      local kb = tostring(b.gfKey or b.name or "")
+      return ka < kb
     end)
   elseif catName == "Quest Milestones" then
     table.sort(list, function(a,b) if (a.levelCap or 0) == (b.levelCap or 0) then return (a.name or "") < (b.name or "") end return (a.levelCap or 0) < (b.levelCap or 0) end)

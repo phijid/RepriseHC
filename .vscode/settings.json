@@ -37,7 +37,8 @@
         "UIDropDownMenu_AddButton",
         "UIDropDownMenu_CreateInfo",
         "STANDARD_TEXT_FONT",
-        "DropDownList1"
+        "DropDownList1",
+        "UIDropDownMenu_JustifyText"
     ],
     "Lua.type.weakUnionCheck": true
 }

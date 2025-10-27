@@ -16,7 +16,7 @@ local function DungeonList()
   local work = {}
   for d,info in pairs(ml) do 
     if (not info.faction) or (faction == info.faction) then
-      if (info.minLevel <= RepriseHC.levelCap) then
+      if (info.minLevel <= ((RepriseHC.GetLevelCap and RepriseHC.GetLevelCap()) or (RepriseHC.levelCap or 60))) then
         table.insert(work, {d=d,l=info.minLevel}) 
       end
     end
@@ -47,10 +47,11 @@ function RepriseHC.BuildCatalog()
   end
   for skill in pairs(RepriseHC.professions) do
     for _, t in ipairs(RepriseHC.profThreshold) do
-      if (t.levelRequirement <= RepriseHC.levelCap) then
+      if (t.levelRequirement <= ((RepriseHC.GetLevelCap and RepriseHC.GetLevelCap()) or (RepriseHC.levelCap or 60))) then
         local title = (t.threshold==75 and "Apprentice") or (t.threshold==150 and "Journeyman") or (t.threshold==225 and "Expert") or "Artisan"
         local pts   = (t.threshold==75 and 15) or (t.threshold==150 and 30) or (t.threshold==225 and 45) or 60
-        table.insert(cat["Professions"], { id=skill.."_"..t.threshold, name=(skill.." "..title), points=pts, skill=skill, threshold=t.threshold, rank=title })
+        local displayName = string.format("%s %s - %d", skill, title, t.threshold)
+        table.insert(cat["Professions"], { id=skill.."_"..t.threshold, name=displayName, points=pts, skill=skill, threshold=t.threshold, rank=title })
       end
     end
   end
@@ -83,49 +84,93 @@ function RepriseHC.BuildCatalog()
 
     local opts = RepriseHC.Ach_GuildFirstOptions(faction)
 
-    -- overall
-    local id_all = "FIRST_" .. RepriseHC.levelCap
-    table.insert(cat["Guild First"], {
-      id     = id_all,
-      name   = "Guild First " .. RepriseHC.levelCap,
-      points = GF_POINTS.ALL,
-      gfType = "ALL",
-      gfKey  = "0",
-      locked = locks[id_all] ~= nil,
-      winner = locks[id_all],
-    })
+    -- Build Guild First cards for all defined level caps (by index), so old caps remain visible
+    local caps = {}
+    if type(RepriseHC.levelCap) == "table" then
+      for k,v in pairs(RepriseHC.levelCap) do
+        table.insert(caps, { idx = tonumber(k) or 0, cap = tonumber(v) or 0 })
+      end
+      table.sort(caps, function(a,b) return a.idx < b.idx end)
+    else
+      table.insert(caps, { idx = 0, cap = tonumber(RepriseHC.levelCap) or 0 })
+    end
 
-    -- class
-    if (opts) then
-      for _, cls in ipairs(opts.classes or {}) do
-        local clsKey = cls:upper():gsub("%s","_")
-        local id     = "FIRST_" .. RepriseHC.levelCap .. "_CLASS_" .. clsKey
+    -- Establish a consistent ordering index for classes and races from options
+    local classOrder = {}
+    if opts and opts.classes then
+      for i, cls in ipairs(opts.classes) do classOrder[cls] = i end
+    end
+    local raceOrder = {}
+    if opts and opts.races then
+      for i, race in ipairs(opts.races) do raceOrder[race] = i end
+    end
+
+    -- Overall caps
+    for _, entry in ipairs(caps) do
+      local capVal = entry.cap
+      if capVal and capVal > 0 then
+        local id_all = "FIRST_" .. capVal
         table.insert(cat["Guild First"], {
-          id     = id,
-          name   = "Guild First " .. RepriseHC.levelCap .. " " .. cls,
-          points = GF_POINTS.CLASS,
-          gfType = "CLASS",
-          gfKey  = cls,
-          locked = locks[id] ~= nil,
-          winner = locks[id],
+          id       = id_all,
+          name     = "Guild First " .. capVal,
+          points   = GF_POINTS.ALL,
+          gfType   = "ALL",
+          gfKey    = "0",
+          gfOrder  = 0,
+          levelCap = capVal,
+          locked   = locks[id_all] ~= nil,
+          winner   = locks[id_all],
         })
       end
     end
 
-    -- race
+    -- Class caps across all caps
+    if (opts) then
+      for _, cls in ipairs(opts.classes or {}) do
+        local ord = classOrder[cls] or 999
+        local clsKey = cls:upper():gsub("%s","_")
+        for _, entry in ipairs(caps) do
+          local capVal = entry.cap
+          if capVal and capVal > 0 then
+            local id = "FIRST_" .. capVal .. "_CLASS_" .. clsKey
+            table.insert(cat["Guild First"], {
+              id       = id,
+              name     = "Guild First " .. capVal .. " " .. cls,
+              points   = GF_POINTS.CLASS,
+              gfType   = "CLASS",
+              gfKey    = cls,
+              gfOrder  = ord,
+              levelCap = capVal,
+              locked   = locks[id] ~= nil,
+              winner   = locks[id],
+            })
+          end
+        end
+      end
+    end
+
+    -- Race caps across all caps
     if (opts) then
       for _, race in ipairs(opts.races or {}) do
+        local ord = raceOrder[race] or 999
         local raceKey = race:upper():gsub("%s","_")
-        local id      = "FIRST_" .. RepriseHC.levelCap .. "_RACE_" .. raceKey
-        table.insert(cat["Guild First"], {
-          id     = id,
-          name   = "Guild First " .. RepriseHC.levelCap .. " " .. race,
-          points = GF_POINTS.RACE,
-          gfType = "RACE",
-          gfKey  = race,
-          locked = locks[id] ~= nil,
-          winner = locks[id],
-        })
+        for _, entry in ipairs(caps) do
+          local capVal = entry.cap
+          if capVal and capVal > 0 then
+            local id = "FIRST_" .. capVal .. "_RACE_" .. raceKey
+            table.insert(cat["Guild First"], {
+              id       = id,
+              name     = "Guild First " .. capVal .. " " .. race,
+              points   = GF_POINTS.RACE,
+              gfType   = "RACE",
+              gfKey    = race,
+              gfOrder  = ord,
+              levelCap = capVal,
+              locked   = locks[id] ~= nil,
+              winner   = locks[id],
+            })
+          end
+        end
       end
     end
   end

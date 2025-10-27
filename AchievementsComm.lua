@@ -702,7 +702,7 @@ function BuildSnapshot()
     deathLog    = deathLogCopy,
     groupAssignments = groupAssignmentsCopy,
     groupVersion = groupMinor,
-    levelCap    = db.config.levelCap or RepriseHC.levelCap
+    levelCap    = db.config.levelCap or (RepriseHC.GetLevelCap and RepriseHC.GetLevelCap()) or RepriseHC.levelCap
   }
 end
 
@@ -1517,7 +1517,7 @@ local function HandleIncoming(prefix, payload, channel, sender)
     end
     c.dbv = nil
 
-    if p.id and p.id:find("^FIRST_" .. RepriseHC.levelCap) then
+    if p.id and p.id:find("^FIRST_" .. ((RepriseHC.GetLevelCap and RepriseHC.GetLevelCap()) or (RepriseHC.levelCap or 60))) then
       local gf = db.guildFirsts[p.id]
       if not gf then
         gf = {

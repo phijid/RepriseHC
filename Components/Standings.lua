@@ -1,4 +1,4 @@
-local GROUPS = {
+﻿local GROUPS = {
   "Rallying Cry of the Dragonslayer","Warchief's Blessing","Spirit of Zandalar","Songflower Serenade",
   "Mol'dar's Moxie","Slip'kik's Savvy","Fengus' Ferocity","Darkmoon Faire"
 }
@@ -144,6 +144,18 @@ local function SetMyGroup(groupName)
 end
 
 -- ===== Dropdown =====
+local function CenterDropdownText(dd)
+  if not dd or not dd.GetName then return end
+  local txt = dd.Text or _G[dd:GetName().."Text"]
+  if not txt then return end
+  if UIDropDownMenu_JustifyText then pcall(UIDropDownMenu_JustifyText, dd, "CENTER") end
+  txt:SetJustifyH("CENTER")
+  txt:SetWordWrap(false)
+  txt:ClearAllPoints()
+  txt:SetPoint("LEFT", dd, "LEFT", 25, 2)
+  txt:SetPoint("RIGHT", dd, "RIGHT", -40, 2)
+end
+
 local function EnsureDropdown(page, y)
   if page._groupDropdown then
     local txt = _G[page._groupDropdown:GetName().."Text"]
@@ -155,6 +167,7 @@ local function EnsureDropdown(page, y)
     if not IsMenuOpenFor(page._groupDropdown) then
       page._groupDropdown._refresh()
     end
+    CenterDropdownText(page._groupDropdown)
     return page._groupDropdown
   end
 
@@ -173,6 +186,10 @@ local function EnsureDropdown(page, y)
     txt:SetWidth(desiredWidth - 40)
     txt:SetJustifyH("CENTER")
     txt:SetWordWrap(false)
+  end
+  CenterDropdownText(dd)
+  if dd.HookScript then
+    dd:HookScript("OnShow", function() CenterDropdownText(dd) end)
   end
 
   dd._init = function(self, level)
@@ -194,7 +211,8 @@ local function EnsureDropdown(page, y)
       current = CurrentGroupFor(RepriseHC.PlayerKey())
     end
     UIDropDownMenu_SetSelectedValue(dd, current)
-    UIDropDownMenu_SetText(dd, current or "Choose…")
+    UIDropDownMenu_SetText(dd, current or "Choose...")
+    CenterDropdownText(dd)
   end
 
   UIDropDownMenu_Initialize(dd, dd._init)
@@ -223,7 +241,7 @@ local function ShowGroupTooltip(self, groupName, members)
   else
     for i, m in ipairs(members) do
       local ptsTxt, r, g, b = FormatPointsTooltip(m.points, m.dead)
-      GameTooltip:AddLine(("%d) %s  —  %s"):format(i, m.key, ptsTxt), r, g, b)
+      GameTooltip:AddLine(("%d) %s  -  %s"):format(i, m.key, ptsTxt), r, g, b)
     end
   end
   GameTooltip:Show()
@@ -309,3 +327,5 @@ function RepriseHC.RenderStandings(page)
   if dd and dd._refresh and not IsMenuOpenFor(dd) then dd._refresh() end
   return -y + 12
 end
+
+

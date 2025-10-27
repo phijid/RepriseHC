@@ -204,7 +204,37 @@ end
 -- ===== Earners "hidden" page state/helpers =====
 
 
+local function __IsOurGroupDropdownOpen()
+  local open = rawget(_G, "UIDROPDOWNMENU_OPEN_MENU")
+  if open and open.GetName and open:GetName() == "RepriseHC_GroupDropdown" then
+    return true
+  end
+  return false
+end
+
+local __refreshDeferred = false
+
 function UI:Refresh()
+  -- If the Group dropdown menu is open, defer repainting to avoid closing it.
+  if (RepriseHCUiDB.nav == "standing") and __IsOurGroupDropdownOpen() then
+    if not __refreshDeferred then
+      __refreshDeferred = true
+      C_Timer.After(0.25, function()
+        __refreshDeferred = false
+        if not __IsOurGroupDropdownOpen() then
+          if UI and UI.Refresh then UI:Refresh() end
+        else
+          -- Still open; try again shortly
+          __refreshDeferred = true
+          C_Timer.After(0.4, function()
+            __refreshDeferred = false
+            if UI and UI.Refresh then UI:Refresh() end
+          end)
+        end
+      end)
+    end
+    return
+  end
   local page = BeginPage()
   local id = RepriseHCUiDB.nav or "leaderboard"
   local height = 100

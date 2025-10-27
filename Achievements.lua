@@ -1,9 +1,10 @@
 local ADDON = "RepriseHC"
 RepriseHC = RepriseHC or {}
 
+local currentCapValue = (RepriseHC.GetLevelCap and RepriseHC.GetLevelCap()) or (RepriseHC.levelCap or 60)
 local maxMilestone = math.max(
-  (RepriseHC.MaxMilestone and RepriseHC.MaxMilestone()) or (math.floor(math.max(0, (RepriseHC.levelCap or 60)) / 10) * 10),
-  RepriseHC.levelCap or 0
+  (RepriseHC.MaxMilestone and RepriseHC.MaxMilestone()) or (math.floor(math.max(0, (currentCapValue or 60)) / 10) * 10),
+  currentCapValue or 0
 )
 local levelMilestones = {}
 if type(RepriseHC.levels) == "table" then
@@ -107,7 +108,7 @@ do
   local work = {}
   for d,info in pairs(DUNGEON_MINLEVEL) do 
     if (not info.faction) or (faction == info.faction) then
-      if (info.minLevel <= RepriseHC.levelCap) then
+      if (info.minLevel <= ((RepriseHC.GetLevelCap and RepriseHC.GetLevelCap()) or (RepriseHC.levelCap or 60))) then
         table.insert(work,{d=d,l=info.minLevel}) 
       end
     end
@@ -122,7 +123,7 @@ function RepriseHC.Ach_DungeonList()
   local work = {}
   for d,info in pairs(DUNGEON_MINLEVEL) do 
     if (not info.faction) or (faction == info.faction) then
-      if (info.minLevel <= RepriseHC.levelCap) then
+      if (info.minLevel <= ((RepriseHC.GetLevelCap and RepriseHC.GetLevelCap()) or (RepriseHC.levelCap or 60))) then
         table.insert(work,{d=d,l=info.minLevel}) 
       end
     end
@@ -308,11 +309,11 @@ function RepriseHC.Ach_CheckProfessions(opts)
     local newRank = ranks[skill] or 0
     local oldRank = previous[skill] or 0
     for _, th in ipairs(RepriseHC.profThreshold) do
-      if th.levelRequirement <= RepriseHC.levelCap and newRank >= th.threshold and (force or oldRank < th.threshold) then
+      if th.levelRequirement <= ((RepriseHC.GetLevelCap and RepriseHC.GetLevelCap()) or (RepriseHC.levelCap or 60)) and newRank >= th.threshold and (force or oldRank < th.threshold) then
         local id = skill .. "_" .. th.threshold
         local title = (th.threshold==75 and "Apprentice") or (th.threshold==150 and "Journeyman") or (th.threshold==225 and "Expert") or "Artisan"
         local pts = (th.threshold==75 and 15) or (th.threshold==150 and 30) or (th.threshold==225 and 45) or 60
-        local nm = skill .. " " .. title
+        local nm = string.format("%s %s - %d", skill, title, th.threshold)
         if EarnAchievement(id, nm, pts) then
           local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format(nm, pts)
           Print(msg)
@@ -535,7 +536,7 @@ end
 function RepriseHC.Ach_TryGuildFirsts(levelOverride)
   if not (RepriseHC.navigation.guildFirst.enabled) then return end
   if not RepriseHC.IsGuildAllowed() then return end
-  local cap = tonumber(RepriseHC.levelCap) or 0
+  local cap = tonumber((RepriseHC.GetLevelCap and RepriseHC.GetLevelCap()) or RepriseHC.levelCap) or 0
   if cap <= 0 then return end
 
   local lvl = tonumber(levelOverride)
@@ -731,7 +732,7 @@ local function TryGuildFirstsIfReady(levelOverride)
   if not (RepriseHC and RepriseHC.Ach_TryGuildFirsts) then return end
   if not (RepriseHC.navigation and RepriseHC.navigation.guildFirst and RepriseHC.navigation.guildFirst.enabled) then return end
   if not (RepriseHC.IsGuildAllowed and RepriseHC.IsGuildAllowed()) then return end
-  local cap = tonumber(RepriseHC.levelCap) or 0
+  local cap = tonumber((RepriseHC.GetLevelCap and RepriseHC.GetLevelCap()) or RepriseHC.levelCap) or 0
   if cap <= 0 then return end
   local lvl = tonumber(levelOverride)
   if not lvl then

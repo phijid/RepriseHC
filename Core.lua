@@ -1,14 +1,23 @@
 RepriseHC = RepriseHC or {}
 RepriseHC.name = "RepriseHC"
-RepriseHC.version = "0.8.0b"
+RepriseHC.version = "0.9.0b"
 RepriseHC.allowedGuilds = { ["Reprise"] = true, ["Midnight Guardians"] = true }
 
 local DEFAULT_DB_VERSION = 1
-RepriseHC.levelCap = 10
+RepriseHC.levelCap = { [0] = 10 }
+RepriseHC.levelCapIndex = 0
 RepriseHC.maxLevelPerCap = 12
 RepriseHC.levels = {10,20,30,40,50,60}
 local function EnsureLevelMilestones()
-  local cap = tonumber(RepriseHC.levelCap) or 0
+  local function CurrentCap()
+    local idx = tonumber(RepriseHC.levelCapIndex) or 0
+    local tbl = RepriseHC.levelCap
+    if type(tbl) == "table" then
+      return tonumber(tbl[idx]) or 0
+    end
+    return tonumber(tbl) or 0
+  end
+  local cap = CurrentCap()
   if cap <= 0 then return end
   local found = false
   for _, threshold in ipairs(RepriseHC.levels) do
@@ -161,7 +170,11 @@ function RepriseHC.IsGuildAllowed()
 end
 
 function RepriseHC.GetLevelCap()
-  return RepriseHC.levelCap or 60
+  local idx = tonumber(RepriseHC.levelCapIndex) or 0
+  if type(RepriseHC.levelCap) == "table" then
+    return tonumber(RepriseHC.levelCap[idx]) or 60
+  end
+  return tonumber(RepriseHC.levelCap) or 60
 end
 
 function RepriseHC.GetShowToGuild()
@@ -169,7 +182,7 @@ function RepriseHC.GetShowToGuild()
 end
 
 function RepriseHC.MaxMilestone()
-  local cap = RepriseHC.levelCap or 60
+  local cap = RepriseHC.GetLevelCap() or 60
   return math.floor(math.max(0, cap) / 10) * 10
 end
 
@@ -730,7 +743,7 @@ end
 Core:SetScript("OnEvent", function(_, event, arg1)
   if event == "ADDON_LOADED" and arg1 == RepriseHC.name then
     local db = EnsureDb()
-    db.config.levelCap = RepriseHC.levelCap or 60
+    db.config.levelCap = RepriseHC.GetLevelCap() or 60
     local currentVersion = RepriseHC.GetDbVersion()
     RepriseHC.PruneAchievementsToVersion(currentVersion)
     RepriseHC.PruneDeathLogToVersion(currentVersion)
