@@ -748,11 +748,13 @@ Core:SetScript("OnEvent", function(_, event, arg1)
     RepriseHC.PruneAchievementsToVersion(currentVersion)
     RepriseHC.PruneDeathLogToVersion(currentVersion)
     RepriseHC.PruneGroupAssignmentsToVersion(currentVersion)
-  elseif event == "PLAYER_LOGIN" then
-    if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
-      C_ChatInfo.RegisterAddonMessagePrefix("RepriseHC_ACH")
-    end
+  elseif event == "PLAYER_LOGIN" then    
     C_Timer.After(10, function()
+
+      if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
+        C_ChatInfo.RegisterAddonMessagePrefix("RepriseHC_ACH")
+      end
+
       if not RepriseHC.IsGuildAllowed() then
         RepriseHC.Print("|cffff6060Disabled: You must be in the guild 'Reprise' or 'RepriseHC' for this addon to work.|r")
       else

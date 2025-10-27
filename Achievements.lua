@@ -783,7 +783,7 @@ local function __RHC_Ach_OnEvent(event, ...)
           if RepriseHC.Ach_CheckSpeedrunOnDing then RepriseHC.Ach_CheckSpeedrunOnDing(math.floor(level / 10) * 10) end
           TryGuildFirstsIfReady()
         end
-          C_Timer.After(15, function()
+          C_Timer.After(30, function()
             if RepriseHC.RebuildGuildCache then RepriseHC.RebuildGuildCache() end
             local requestedSync = false
             if RepriseHC.Comm_RequestSnapshot then
