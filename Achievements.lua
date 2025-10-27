@@ -45,7 +45,7 @@ end
 
 -- ========= Dungeon ordering & bosses =========
 local DUNGEON_MINLEVEL = {
-  ["Ragefire Chasm"]= { minLevel=13, faction="Horde" } ,
+  ["Ragefire Chasm"]= { minLevel=10, faction="Horde" } ,
   ["Wailing Caverns"]= { minLevel=17 } , 
   ["The Deadmines"]= { minLevel=17, faction="Alliance"  } , 
   ["Shadowfang Keep"]= { minLevel=22 } , 
@@ -447,7 +447,7 @@ function RepriseHC.Ach_QuestList(faction)
   local list = {}
   for _,q in ipairs(QUEST_MILESTONES) do
     if (not q.faction) or (faction == q.faction) then
-      if (q.levelCap <= RepriseHC.levelCap) then
+      if (q.levelCap <= RepriseHC.maxLevelPerCap) then
         local name = string.format("Complete %s before reaching level %d", q.title, q.levelCap)
         table.insert(list, { id = "QUEST_"..q.questId, questId = q.questId, levelCap = q.levelCap, name = name, points = QuestPointsForLevelCap(q.levelCap), faction = q.faction })
       end
@@ -460,7 +460,7 @@ end
 function RepriseHC.Ach_CheckQuest(questID)
   local level = UnitLevel("player") or 1
   for _,q in ipairs(QUEST_MILESTONES) do
-    if (q.levelCap <= RepriseHC.levelCap) then
+    if (q.levelCap <= RepriseHC.maxLevelPerCap) then
       if q.questId == questID and level <= q.levelCap then
         local id  = "QUEST_"..q.questId
         local nm  = string.format("Complete %s before reaching level %d", q.title, q.levelCap)

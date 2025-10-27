@@ -138,7 +138,7 @@ function RepriseHC.BuildCatalog()
   table.sort(qlist, function(a,b) if (a.levelCap or 0) == (b.levelCap or 0) then return (a.name or "") < (b.name or "") end return (a.levelCap or 0) < (b.levelCap or 0) end)
   for _,q in ipairs(qlist) do
 
-    if (q.levelCap <= RepriseHC.levelCap) then
+    if (q.levelCap <= RepriseHC.maxLevelPerCap) then
       table.insert(cat["Quest Milestones"], { id=q.id, name=q.name, points=q.points, levelCap=q.levelCap, questId=q.questId })
     end
 
