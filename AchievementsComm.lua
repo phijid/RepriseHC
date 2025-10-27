@@ -1768,6 +1768,10 @@ local function HandleIncoming(prefix, payload, channel, sender)
     haveSnapshot = true
     if RepriseHC.Print and RHC_DEBUG then RepriseHC.Print("Synchronized snapshot.") end
     if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
+    if RepriseHC and RepriseHC.Ach_OnGuildFirstSnapshot then
+      local ok = pcall(RepriseHC.Ach_OnGuildFirstSnapshot)
+      if not ok and RHC_DEBUG and print then print("|cff99ccff[RHC]|r Ach_OnGuildFirstSnapshot failed") end
+    end
   end
 end
 
@@ -1776,7 +1780,14 @@ RepriseHC.Comm_OnAddonMessage = HandleIncoming
 
 -- -------- public send (multi-path with DEATH fan-out) --------
 function HasSnapshotFlag()
-  if RepriseHC and RepriseHC.Comm_HaveSnapshot then return true end
+  if RepriseHC and RepriseHC.Comm_HaveSnapshot then
+    local ok, ready = pcall(RepriseHC.Comm_HaveSnapshot)
+    if ok then return ready and true or false end
+  end
+  return haveSnapshot
+end
+
+function RepriseHC.Comm_HaveSnapshot()
   return haveSnapshot
 end
 

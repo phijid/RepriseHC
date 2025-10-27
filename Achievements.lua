@@ -728,6 +728,8 @@ local function UpdateInstanceState()
 end
 
 local pendingGuildFirstLevel = nil
+local requestedGuildFirstSnapshot = false
+local requestedGuildFirstSnapshotAt = 0
 
 local function TryGuildFirstsIfReady(levelOverride)
   local cap = tonumber(RepriseHC and RepriseHC.levelCap) or 0
@@ -736,11 +738,39 @@ local function TryGuildFirstsIfReady(levelOverride)
   local lvlOverrideNumber = tonumber(levelOverride)
   if lvlOverrideNumber and lvlOverrideNumber >= cap then
     pendingGuildFirstLevel = lvlOverrideNumber
+  elseif not pendingGuildFirstLevel then
+    local currentLevel = UnitLevel and UnitLevel("player") or nil
+    if currentLevel and currentLevel >= cap then
+      pendingGuildFirstLevel = currentLevel
+    end
   end
 
-  local lvl = lvlOverrideNumber or pendingGuildFirstLevel
-  if not lvl then return end
-  if lvl < cap then return end
+  local lvl = pendingGuildFirstLevel
+  if not lvl or lvl < cap then return end
+
+  local requiresSnapshot = not lvlOverrideNumber
+  if requiresSnapshot and RepriseHC then
+    local snapshotReady = true
+    if RepriseHC.Comm_HaveSnapshot then
+      local ok, result = pcall(RepriseHC.Comm_HaveSnapshot)
+      snapshotReady = ok and result and true or false
+    end
+
+    if not snapshotReady then
+      if RepriseHC.Comm_RequestSnapshot then
+        local now = (GetTime and GetTime()) or time()
+        if not requestedGuildFirstSnapshot or (now - requestedGuildFirstSnapshotAt) > 10 then
+          requestedGuildFirstSnapshot = true
+          requestedGuildFirstSnapshotAt = now
+          pcall(RepriseHC.Comm_RequestSnapshot)
+        end
+      end
+      return
+    end
+  end
+
+  requestedGuildFirstSnapshot = false
+  requestedGuildFirstSnapshotAt = 0
 
   if not (RepriseHC and RepriseHC.Ach_TryGuildFirsts) then return end
   if not (RepriseHC.navigation and RepriseHC.navigation.guildFirst and RepriseHC.navigation.guildFirst.enabled) then return end
@@ -748,6 +778,12 @@ local function TryGuildFirstsIfReady(levelOverride)
 
   RepriseHC.Ach_TryGuildFirsts(lvl)
   pendingGuildFirstLevel = nil
+end
+
+function RepriseHC.Ach_OnGuildFirstSnapshot()
+  requestedGuildFirstSnapshot = false
+  requestedGuildFirstSnapshotAt = 0
+  TryGuildFirstsIfReady()
 end
 
 local function OnCombatLogEvent()
