@@ -783,29 +783,31 @@ local function __RHC_Ach_OnEvent(event, ...)
           if RepriseHC.Ach_CheckSpeedrunOnDing then RepriseHC.Ach_CheckSpeedrunOnDing(math.floor(level / 10) * 10) end
           TryGuildFirstsIfReady()
         end
-          if RepriseHC.RebuildGuildCache then RepriseHC.RebuildGuildCache() end
-          local requestedSync = false
-          if RepriseHC.Comm_RequestSnapshot then
-            requestedSync = RepriseHC.Comm_RequestSnapshot() or requestedSync
-          elseif RepriseHC.Comm_Send then
-            RepriseHC.Comm_Send("REQSNAP", { need="all" })
-            requestedSync = true
-          end
-          if RepriseHC.Comm_BroadcastSnapshot then
-            requestedSync = RepriseHC.Comm_BroadcastSnapshot() or requestedSync
-          elseif RepriseHC.Comm_Send then
-            local builder = RepriseHC.Comm_BuildSnapshot
-            local snapshot = builder and builder()
-            if snapshot then
-              RepriseHC.Comm_Send("SNAP", { kind="SNAP", data = snapshot })
+          C_Timer.After(15, function()
+            if RepriseHC.RebuildGuildCache then RepriseHC.RebuildGuildCache() end
+            local requestedSync = false
+            if RepriseHC.Comm_RequestSnapshot then
+              requestedSync = RepriseHC.Comm_RequestSnapshot() or requestedSync
+            elseif RepriseHC.Comm_Send then
+              RepriseHC.Comm_Send("REQSNAP", { need="all" })
               requestedSync = true
             end
-          end
-          if requestedSync then
-            RepriseHC.Print("Guild roster refreshed. Sync requested.")
-          else
-            RepriseHC.Print("Guild roster refreshed.")
-          end
+            if RepriseHC.Comm_BroadcastSnapshot then
+              requestedSync = RepriseHC.Comm_BroadcastSnapshot() or requestedSync
+            elseif RepriseHC.Comm_Send then
+              local builder = RepriseHC.Comm_BuildSnapshot
+              local snapshot = builder and builder()
+              if snapshot then
+                RepriseHC.Comm_Send("SNAP", { kind="SNAP", data = snapshot })
+                requestedSync = true
+              end
+            end
+            if requestedSync then
+              RepriseHC.Print("Guild roster refreshed. Sync requested.")
+            else
+              RepriseHC.Print("Guild roster refreshed.")
+            end
+          end)
       end
     end)
   elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
