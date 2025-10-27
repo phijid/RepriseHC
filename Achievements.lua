@@ -827,7 +827,6 @@ local function __RHC_Ach_OnEvent(event, ...)
           if RepriseHC.Ach_CheckSpeedrunOnDing then RepriseHC.Ach_CheckSpeedrunOnDing(math.floor(level / 10) * 10) end
           TryGuildFirstsIfReady(level)
         end
-        TryGuildFirstsIfReady()
       end
     end)
   elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
