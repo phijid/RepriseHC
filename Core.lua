@@ -1,6 +1,6 @@
 RepriseHC = RepriseHC or {}
 RepriseHC.name = "RepriseHC"
-RepriseHC.version = "0.6.0b"
+RepriseHC.version = "0.8.0b"
 RepriseHC.allowedGuilds = { ["Reprise"] = true, ["Midnight Guardians"] = true }
 
 local DEFAULT_DB_VERSION = 1
@@ -27,6 +27,7 @@ RepriseHC.showToGuild = true
 RepriseHC.runtime = RepriseHC.runtime or {}
 RepriseHC.defaultDbVersion = DEFAULT_DB_VERSION
 RepriseHC.AchievementTesting = false
+RepriseHC.skull = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_8:12:12:0:0|t"
 
 RepriseHC.speedrunThresholds = {
   [10] = 2,
@@ -438,6 +439,21 @@ function RepriseHC.PushDeath(entry)
   log[#log + 1] = entry
 end
 
+function RepriseHC._norm(s)
+    if not s then return nil end
+    return tostring(s):gsub("%s+", ""):lower()
+  end
+
+function RepriseHC.IsDead(playerKey)
+  local db = EnsureDb(); if not db then return false end
+  local wanted = RepriseHC._norm(playerKey)
+  for _, d in ipairs(db.deathLog) do
+    local k = RepriseHC._norm(d.playerKey or d.name)
+    if k and k == wanted then return true end
+  end
+  return false
+end
+
 local function NormalizeCharacterAchievements(entry, targetVersion)
   if type(entry) ~= "table" then return 0, 0 end
   entry.achievements = entry.achievements or {}
@@ -726,7 +742,7 @@ Core:SetScript("OnEvent", function(_, event, arg1)
     if not RepriseHC.IsGuildAllowed() then
       RepriseHC.Print("|cffff6060Disabled: You must be in the guild 'Reprise' or 'RepriseHC' for this addon to work.|r")
     else
-      RepriseHC.Print(("Core loaded v%s"):format(RepriseHC.version))
+      RepriseHC.Print(("Hardcore Tracker v%s Loaded!"):format(RepriseHC.version))
     end
   end
 end)
@@ -777,6 +793,6 @@ SlashCmdList["REPRISEHC"] = function(msg)
     end
     RepriseHC.TriggerGlobalReset(signature)
   else
-    RepriseHC.Print("Commands: /rhc on, /rhc off, /rhc reload, /rhc dbv, |cffa0a0a0/rhc reset all|r (SECRET)")
+    RepriseHC.Print("Commands: /rhc reload, /rhc dbv")
   end
 end

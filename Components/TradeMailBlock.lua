@@ -148,7 +148,7 @@ local function __RHC_Trade_OnEvent(event, ...)
   if event == "PLAYER_LOGIN" then
     C_Timer.After(2, function()
       if RepriseHC.RebuildGuildCache then RepriseHC.RebuildGuildCache() end
-      if RepriseHC.Print then RepriseHC.Print("Guild Only trade, mail, and auction house protection loaded. (/rhc on|off)") end
+      -- if RepriseHC.Print then RepriseHC.Print("Guild Only trade, mail, and auction house protection loaded. (/rhc on|off)") end
     end)
   elseif event == "PLAYER_GUILD_UPDATE" or event == "GUILD_ROSTER_UPDATE" then
     if RepriseHC.RebuildGuildCache then RepriseHC.RebuildGuildCache() end

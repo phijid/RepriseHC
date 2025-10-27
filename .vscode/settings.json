@@ -36,7 +36,8 @@
         "GROUPS",
         "UIDropDownMenu_AddButton",
         "UIDropDownMenu_CreateInfo",
-        "STANDARD_TEXT_FONT"
+        "STANDARD_TEXT_FONT",
+        "DropDownList1"
     ],
     "Lua.type.weakUnionCheck": true
 }

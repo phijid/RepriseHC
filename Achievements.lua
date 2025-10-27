@@ -808,8 +808,8 @@ local function __RHC_Ach_OnEvent(event, ...)
     if RepriseHC.IsGuildAllowed and questID then
       RepriseHC.Ach_CheckQuest(questID)
     end
-  elseif event == "PLAYER_GUILD_UPDATE" then
-    C_Timer.After(0.5, function() TryGuildFirstsIfReady() end)
+  -- elseif event == "PLAYER_GUILD_UPDATE" then
+  --   C_Timer.After(0.5, function() TryGuildFirstsIfReady() end)
   end
 end
 

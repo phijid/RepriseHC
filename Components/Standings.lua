@@ -49,23 +49,6 @@ local function MyPoints()
   return tonumber(me and me.points) or 0
 end
 
--- Normalize for comparisons
-local function _norm(s)
-  if not s then return nil end
-  return tostring(s):gsub("%s+", ""):lower()
-end
-
--- True if this playerKey is present in the death log
-local function IsDead(playerKey)
-  local db = DB_SAFE(); if not db then return false end
-  local wanted = _norm(playerKey)
-  for _, d in ipairs(db.deathLog) do
-    local k = _norm(d.playerKey or d.name)
-    if k and k == wanted then return true end
-  end
-  return false
-end
-
 local GROUP_SET = (function()
   local t = {}
   for _, g in ipairs(GROUPS) do t[g] = true end
@@ -88,7 +71,7 @@ local function CalcGroupStandings()
       if dbVersion == 0 or entryVersion == 0 or entryVersion == dbVersion then
         local char  = db.characters[key]
         local pts   = tonumber(char and char.points) or 0
-        local dead  = IsDead(key)
+        local dead  = RepriseHC.IsDead(key)
         if not dead then
           totals[g] = totals[g] + pts   -- only alive add to totals
         end
@@ -103,6 +86,15 @@ local function CalcGroupStandings()
   end
 
   return totals, members
+end
+
+-- Safe check: is the Blizzard dropdown menu currently open for this dropdown?
+local function IsMenuOpenFor(dd)
+  local open = rawget(_G, "UIDROPDOWNMENU_OPEN_MENU")
+  if open and open == dd then return true end
+  local list1 = rawget(_G, "DropDownList1")
+  if list1 and list1.IsShown and list1:IsShown() then return true end
+  return false
 end
 
 local function SetMyGroup(groupName)
@@ -160,7 +152,9 @@ local function EnsureDropdown(page, y)
       txt:SetJustifyH("CENTER")
       txt:SetWordWrap(false)
     end
-    page._groupDropdown._refresh()
+    if not IsMenuOpenFor(page._groupDropdown) then
+      page._groupDropdown._refresh()
+    end
     return page._groupDropdown
   end
 
@@ -210,12 +204,11 @@ local function EnsureDropdown(page, y)
   return dd
 end
 
--- Format points in tooltip: red + skull if dead
+-- Format points in tooltip: red + RepriseHC.skull if dead
 local function FormatPointsTooltip(points, dead)
   local txt = ("%d pts"):format(points or 0)
-  if dead then
-    local skull = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_8:12:12:0:0|t"
-    return ("|cffff4040%s|r %s"):format(txt, skull), 1, 0.35, 0.35
+  if dead then    
+    return ("|cffff4040%s|r %s"):format(txt, RepriseHC.skull), 1, 0.35, 0.35
   end
   return txt, 0.9, 0.9, 0.9
 end
@@ -257,6 +250,12 @@ function RepriseHC.RenderStandings(page)
   totals  = totals  or {}
   members = members or {}
 
+  -- determine my current group to highlight its row
+  local myGroup = nil
+  if RepriseHC.PlayerKey then
+    myGroup = CurrentGroupFor(RepriseHC.PlayerKey())
+  end
+
   -- header
   local hGroup = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   hGroup:SetPoint("TOPLEFT", 12, y - 6); hGroup:SetText("Group")
@@ -272,6 +271,17 @@ function RepriseHC.RenderStandings(page)
     local row = CreateFrame("Frame", nil, page)
     row:SetPoint("TOPLEFT", 8, y)
     row:SetSize(page:GetWidth() - 16, 18)
+
+    -- background highlight for the player's group
+    local bg = row:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(row)
+    if g == myGroup then
+      -- subtle gold highlight to indicate "your" group
+      bg:SetColorTexture(1, 0.82, 0, 0.18)
+    else
+      -- no highlight for other rows
+      bg:SetColorTexture(0, 0, 0, 0)
+    end
 
     local nameFS = page:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     nameFS:SetPoint("LEFT", row, "LEFT", 4, 0)
@@ -294,6 +304,8 @@ function RepriseHC.RenderStandings(page)
     y = y - 22
   end
 
-  if dd and dd._refresh then dd._refresh() end
+  -- Avoid touching dropdown selection text while a dropdown menu is open,
+  -- since some UI updates can cause the menu to close immediately.
+  if dd and dd._refresh and not IsMenuOpenFor(dd) then dd._refresh() end
   return -y + 12
 end

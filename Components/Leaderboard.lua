@@ -24,7 +24,12 @@ function RepriseHC.RenderLeaderboard(page)
     stripe:SetVertexColor(1,1,1, i%2==0 and 0.06 or 0.03)
 
     local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    fs:SetPoint("LEFT", 8, 0); fs:SetText(("%d. %s"):format(i, char.name))
+    fs:SetPoint("LEFT", 8, 0)    
+    if RepriseHC and RepriseHC.IsDead and RepriseHC.IsDead(char.name) then
+      fs:SetText(("%d. %s %s"):format(i, RepriseHC.skull, char.name))
+    else
+      fs:SetText(("%d. %s"):format(i, char.name))
+    end
     fs:SetTextColor(1,1,1,1)
 
     local pts = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
