@@ -752,11 +752,13 @@ Core:SetScript("OnEvent", function(_, event, arg1)
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
       C_ChatInfo.RegisterAddonMessagePrefix("RepriseHC_ACH")
     end
-    if not RepriseHC.IsGuildAllowed() then
-      RepriseHC.Print("|cffff6060Disabled: You must be in the guild 'Reprise' or 'RepriseHC' for this addon to work.|r")
-    else
-      RepriseHC.Print(("Hardcore Tracker v%s Loaded!"):format(RepriseHC.version))
-    end
+    C_Timer.After(10, function()
+      if not RepriseHC.IsGuildAllowed() then
+        RepriseHC.Print("|cffff6060Disabled: You must be in the guild 'Reprise' or 'RepriseHC' for this addon to work.|r")
+      else
+        RepriseHC.Print(("Hardcore Tracker v%s Loaded!"):format(RepriseHC.version))
+      end
+    end)
   end
 end)
 
