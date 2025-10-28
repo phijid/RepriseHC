@@ -74,7 +74,7 @@ local DUNGEON_MINLEVEL = {
 }
 
 local FINAL_BOSS = {
-  ["Ragefire Chasm"]               = { npc=11518, boss="Jergosh the Invoker" },
+  ["Ragefire Chasm"]               = { npc=11519, boss="Bazzalan" },
   ["Wailing Caverns"]              = { npc=3654,  boss="Mutanus the Devourer" },
   ["The Deadmines"]                = { npc=639,   boss="Edwin Vancleef", faction="Alliance" },
   ["Shadowfang Keep"]              = { npc=4275,  boss="Archmage Arugal" },
