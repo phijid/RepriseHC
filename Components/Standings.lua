@@ -1,6 +1,6 @@
 ﻿local GROUPS = {
   "Rallying Cry of the Dragonslayer","Warchief's Blessing","Spirit of Zandalar","Songflower Serenade",
-  "Mol'dar's Moxie","Slip'kik's Savvy","Fengus' Ferocity","Darkmoon Faire"
+  "Mol'dar's Moxie","Slip'kik's Savvy","Fengus' Ferocity","Sayge's Dark Fortune"
 }
 
 local function DB_SAFE()
