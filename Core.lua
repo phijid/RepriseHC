@@ -1,10 +1,10 @@
 RepriseHC = RepriseHC or {}
 RepriseHC.name = "RepriseHC"
-RepriseHC.version = "0.10.0a"
+RepriseHC.version = "0.11.0a"
 RepriseHC.allowedGuilds = { ["Reprise"] = true, ["Midnight Guardians"] = true }
 
 local DEFAULT_DB_VERSION = 1
-RepriseHC.levelCap = { [0] = 2 }
+RepriseHC.levelCap = { [0] = 12 }
 RepriseHC.levelCapIndex = 0
 RepriseHC.maxLevelPerCap = 12
 RepriseHC.levels = {10,20,30,40,50,60}
