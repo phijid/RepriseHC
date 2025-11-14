@@ -1,12 +1,12 @@
 RepriseHC = RepriseHC or {}
 RepriseHC.name = "RepriseHC"
-RepriseHC.version = "0.11.0a"
-RepriseHC.allowedGuilds = { ["Reprise"] = true, ["Midnight Guardians"] = true }
+RepriseHC.version = "0.12.0a"
+RepriseHC.allowedGuilds = { ["Reprise"] = true }
 
 local DEFAULT_DB_VERSION = 1
-RepriseHC.levelCap = { [0] = 12 }
+RepriseHC.levelCap = { [0] = 16 }
 RepriseHC.levelCapIndex = 0
-RepriseHC.maxLevelPerCap = 12
+RepriseHC.maxLevelPerCap = 60
 RepriseHC.levels = {10,20,30,40,50,60}
 local function EnsureLevelMilestones()
   local function CurrentCap()
@@ -96,7 +96,7 @@ RepriseHC.profThreshold = {
 
 RepriseHC.navigation = {
   leaderboard = { label="Leaderboard", enabled=true },
-  standing    = { label="Group Standings", enabled=true},
+  standing    = { label="Group Standings", enabled=false},
   level       = { label="Level Milestones", enabled=true },
   speedrun    = { label="Speedrun", enabled=true },
   quest       = { label="Quest Milestones", enabled=true },
