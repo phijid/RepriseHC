@@ -178,6 +178,54 @@ local function RememberAssignmentMinor(playerKey, minor)
   db.config.groupAssignmentMinor[playerKey] = math.floor(value)
 end
 
+local pendingIncrementals = {}
+local ProcessPendingIncrementalEntry
+
+local function DeepCopy(value)
+  if type(value) ~= "table" then return value end
+  local out = {}
+  for k, v in pairs(value) do
+    out[k] = DeepCopy(v)
+  end
+  return out
+end
+
+local function QueuePendingIncremental(version, message, sender, sid, channel, seq, ts)
+  local target = tonumber(version) or 0
+  if target <= 0 then return end
+  if type(message) ~= "table" then return end
+
+  pendingIncrementals[target] = pendingIncrementals[target] or {}
+  local bucket = pendingIncrementals[target]
+  for _, entry in ipairs(bucket) do
+    if entry.sid == sid and entry.seq == seq then
+      return
+    end
+  end
+
+  table.insert(bucket, {
+    message = DeepCopy(message),
+    sender = sender,
+    sid = sid,
+    channel = channel,
+    seq = seq,
+    ts = ts,
+  })
+end
+
+local function FlushPendingIncrementals(version)
+  local target = tonumber(version) or 0
+  if target <= 0 then return end
+  for v, entries in pairs(pendingIncrementals) do
+    if v <= target then
+      for _, entry in ipairs(entries) do
+        ProcessPendingIncrementalEntry(entry)
+      end
+      pendingIncrementals[v] = nil
+    end
+  end
+end
+
 local function EnsureDbVersion(ver)
   local version = tonumber(ver) or 0
   if RepriseHC and RepriseHC.SetDbVersion then
@@ -205,6 +253,7 @@ local function EnsureDbVersion(ver)
   if removed > 0 and RepriseHC and RepriseHC.RefreshUI then
     RepriseHC.RefreshUI()
   end
+  FlushPendingIncrementals(version)
 end
 
 local function PruneLocalDataToVersion(version)
@@ -281,11 +330,11 @@ local function ShouldAcceptIncremental(dbv, sender)
     if localVersion ~= 0 and sender and SendSnapshotPayload then
       SendSnapshotPayload({ kind="SNAP", data=BuildSnapshot() }, sender)
     end
-    return localVersion == 0
+    return localVersion == 0, incoming, localVersion, "missing"
   end
   if localVersion == 0 then
     EnsureDbVersion(incoming)
-    return true
+    return true, incoming, CurrentDbVersion()
   end
   if incoming < localVersion then
     if RHC_DEBUG then
@@ -294,7 +343,7 @@ local function ShouldAcceptIncremental(dbv, sender)
     if sender and SendSnapshotPayload then
       SendSnapshotPayload({ kind="SNAP", data=BuildSnapshot() }, sender)
     end
-    return false
+    return false, incoming, localVersion, "past"
   end
   if incoming > localVersion then
     if RHC_DEBUG then
@@ -320,12 +369,16 @@ local function ShouldAcceptIncremental(dbv, sender)
     end
 
     if adopted then
-      return true
+      return true, incoming, CurrentDbVersion()
     end
 
-    return CurrentDbVersion() == incoming
+    local updated = CurrentDbVersion()
+    if updated == incoming then
+      return true, incoming, updated
+    end
+    return false, incoming, updated, "future"
   end
-  return true
+  return true, incoming, localVersion
 end
 
 local function TryDecodeAce(payload)
@@ -1453,6 +1506,203 @@ local function normalizeKeyAndName(p, sender)
   end
 end
 
+local function ApplyAchievementPayload(p, sender)
+  normalizeKeyAndName(p, sender)
+  if not p.id or p.id == "" then return end
+
+  local db = SafeDB()
+  db.characters = db.characters or {}
+  db.guildFirsts = db.guildFirsts or {}
+
+  local targetVersion = CurrentDbVersion()
+  local entryVersion = tonumber(p.dbVersion or p.dbv) or targetVersion
+  if targetVersion ~= 0 then
+    entryVersion = targetVersion
+  end
+
+  local when = tonumber(p.when) or time()
+  local points = tonumber(p.pts) or 0
+
+  db.characters[p.playerKey] = db.characters[p.playerKey] or { points = 0, achievements = {} }
+  local c = db.characters[p.playerKey]
+  c.achievements = c.achievements or {}
+
+  c.achievements[p.id] = {
+    name = p.name or p.id,
+    points = points,
+    when = when,
+    dbVersion = entryVersion,
+  }
+
+  if RepriseHC and RepriseHC.NormalizeCharacterAchievements then
+    RepriseHC.NormalizeCharacterAchievements(c, targetVersion)
+  else
+    local total = 0
+    for _, ach in pairs(c.achievements) do
+      total = total + (tonumber(ach.points) or 0)
+    end
+    c.points = total
+  end
+
+  if targetVersion ~= 0 then
+    c.dbVersion = targetVersion
+  else
+    c.dbVersion = tonumber(c.dbVersion or c.dbv) or 0
+  end
+  c.dbv = nil
+
+  if p.id and p.id:find("^FIRST_" .. ((RepriseHC.GetLevelCap and RepriseHC.GetLevelCap()) or (RepriseHC.levelCap or 60))) then
+    local gf = db.guildFirsts[p.id]
+    if not gf then
+      gf = {
+        winner = p.playerKey,
+        winnerName = p.name,
+        when = when,
+        dbVersion = entryVersion,
+      }
+      db.guildFirsts[p.id] = gf
+    else
+      if not gf.winner then gf.winner = p.playerKey end
+      if not gf.winnerName then gf.winnerName = p.name end
+      if not gf.when or gf.when == 0 then gf.when = when end
+      if targetVersion ~= 0 then
+        gf.dbVersion = targetVersion
+      else
+        gf.dbVersion = tonumber(gf.dbVersion or gf.dbv) or entryVersion
+      end
+    end
+    if gf then gf.dbv = nil end
+  end
+
+  if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
+end
+
+local function ApplyDeathPayload(p, sender, sid)
+  normalizeKeyAndName(p, sender)
+
+  local function normalizeForCompare(key)
+    return (key or ""):lower():gsub("%-.*$", "")
+  end
+
+  local seen = false
+  local incomingNorm = normalizeForCompare(p.playerKey or p.name)
+
+  for _, d in ipairs(RepriseHC.GetDeathLog()) do
+    if normalizeForCompare(d.playerKey or d.name) == incomingNorm then
+      seen = true
+      break
+    end
+  end
+
+  if seen then
+    if RHC_DEBUG then print("|cff99ccff[RHC]|r DEATH already logged for", p.playerKey, "— skipping") end
+    return
+  end
+
+  local eventWhen = tonumber(p.when) or tonumber(p.time) or time()
+  eventWhen = eventWhen > 0 and math.floor(eventWhen) or time()
+  local entryVersion = tonumber(p.dbVersion or p.dbv) or CurrentDbVersion()
+  table.insert(RepriseHC.GetDeathLog(), {
+    playerKey=p.playerKey or p.name, name=p.name, level=p.level, class=p.class, race=p.race,
+    zone=p.zone, subzone=p.subzone, when=eventWhen, dbVersion=entryVersion
+  })
+
+  if RHC_DEBUG then print("|cff99ccff[RHC]|r DEATH inserted for", p.playerKey or p.name or "?") end
+
+  local announceToGuild = false
+  if IsInGuild() and RepriseHC.GetShowToGuild and RepriseHC.GetShowToGuild() then
+    local myKey = RepriseHC.PlayerKey and RepriseHC.PlayerKey() or UnitName("player")
+    local myNorm = normalizeForCompare(myKey)
+    local isSelfSource = IsSelf(sender) or IsSelf(sid)
+    if incomingNorm ~= "" and incomingNorm == myNorm and isSelfSource then
+      local now = time()
+      local age = now - (eventWhen or now)
+      if age < 0 then age = 0 end
+      local recentlyAnnounced = (now - lastOwnDeathAnnounceAt) < 60
+      if age < 120 and not recentlyAnnounced then
+        announceToGuild = true
+        lastOwnDeathAnnounceAt = now
+      end
+    end
+  end
+  if announceToGuild then
+    local where = (p.zone or "Unknown")
+    if p.subzone and p.subzone ~= "" then where = where .. " - " .. p.subzone end
+    local msg = string.format("%s has died (lvl %d) in %s.", p.name or p.playerKey or "Unknown", p.level or 0, where)
+    SendChatMessage(msg, "GUILD")
+  end
+
+  if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
+end
+
+local function ApplyGroupPayload(p, sender)
+  normalizeKeyAndName(p, sender)
+
+  local rawGroup = p.group or p.groupName or p.value or p.assignment
+  if type(rawGroup) == "string" then
+    rawGroup = rawGroup:gsub("^%s+", ""):gsub("%s+$", "")
+    if rawGroup == "" then rawGroup = nil end
+  else
+    rawGroup = nil
+  end
+
+  local when = tonumber(p.when or p.time) or time()
+  local incomingVersion = tonumber(p.dbVersion or p.dbv) or CurrentDbVersion()
+  if incomingVersion < 0 then incomingVersion = 0 end
+  local incomingGroupVersion = tonumber(p.groupVersion or p.groupMinor or p.gv) or 0
+  if incomingGroupVersion < 0 then incomingGroupVersion = 0 end
+
+  local changed = false
+  local db = SafeDB()
+  db.groupAssignments = db.groupAssignments or {}
+
+  if rawGroup then
+    if RepriseHC and RepriseHC.UpdateGroupAssignment then
+      changed = RepriseHC.UpdateGroupAssignment(p.playerKey, rawGroup, {
+        when = when,
+        dbVersion = incomingVersion ~= 0 and incomingVersion or nil,
+        groupVersion = incomingGroupVersion,
+      })
+    else
+      db.groupAssignments[p.playerKey] = {
+        group = rawGroup,
+        when = when,
+        dbVersion = incomingVersion,
+        groupVersion = incomingGroupVersion,
+      }
+      db.groupAssignments[p.playerKey].dbv = nil
+      if incomingGroupVersion and incomingGroupVersion > 0 then
+        db.config = db.config or {}
+        local currentMinor = tonumber(db.config.groupMinorVersion) or 0
+        if incomingGroupVersion > currentMinor then
+          db.config.groupMinorVersion = incomingGroupVersion
+        end
+        RememberAssignmentMinor(p.playerKey, incomingGroupVersion)
+      end
+      changed = true
+    end
+  else
+    if RepriseHC and RepriseHC.UpdateGroupAssignment then
+      changed = RepriseHC.UpdateGroupAssignment(p.playerKey, nil, { groupVersion = incomingGroupVersion })
+    else
+      if db.groupAssignments[p.playerKey] ~= nil then
+        db.groupAssignments[p.playerKey] = nil
+        changed = true
+      end
+      if incomingGroupVersion and incomingGroupVersion > 0 then
+        db.config = db.config or {}
+        local currentMinor = tonumber(db.config.groupMinorVersion) or 0
+        if incomingGroupVersion > currentMinor then
+          db.config.groupMinorVersion = incomingGroupVersion
+        end
+        RememberAssignmentMinor(p.playerKey, incomingGroupVersion)
+      end
+    end
+  end
+
+  if changed and RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
+end
+
 local function HandleIncoming(prefix, payload, channel, sender)
 
   if RHC_DEBUG then
@@ -1478,202 +1728,37 @@ local function HandleIncoming(prefix, payload, channel, sender)
   local p, topic = t.p or {}, t.t
 
   if topic == "ACH" then
-    if not ShouldAcceptIncremental(p.dbv, sender) then return end
-    normalizeKeyAndName(p, sender)
-    if not p.id or p.id == "" then return end
-
-    local db = SafeDB()
-    db.characters = db.characters or {}
-    db.guildFirsts = db.guildFirsts or {}
-
-    local targetVersion = CurrentDbVersion()
-    local entryVersion = tonumber(p.dbVersion or p.dbv) or targetVersion
-    if targetVersion ~= 0 then
-      entryVersion = targetVersion
-    end
-
-    local when = tonumber(p.when) or time()
-    local points = tonumber(p.pts) or 0
-
-    db.characters[p.playerKey] = db.characters[p.playerKey] or { points = 0, achievements = {} }
-    local c = db.characters[p.playerKey]
-    c.achievements = c.achievements or {}
-
-    c.achievements[p.id] = {
-      name = p.name or p.id,
-      points = points,
-      when = when,
-      dbVersion = entryVersion,
-    }
-
-    if RepriseHC and RepriseHC.NormalizeCharacterAchievements then
-      RepriseHC.NormalizeCharacterAchievements(c, targetVersion)
-    else
-      local total = 0
-      for _, ach in pairs(c.achievements) do
-        total = total + (tonumber(ach.points) or 0)
+    local accept, incomingVersion, _, reason = ShouldAcceptIncremental(p.dbv, sender)
+    if not accept then
+      if reason == "future" then
+        QueuePendingIncremental(incomingVersion, { topic = "ACH", payload = DeepCopy(p) }, sender, sid, channel, q, t.ts)
       end
-      c.points = total
-    end
-
-    if targetVersion ~= 0 then
-      c.dbVersion = targetVersion
-    else
-      c.dbVersion = tonumber(c.dbVersion or c.dbv) or 0
-    end
-    c.dbv = nil
-
-    if p.id and p.id:find("^FIRST_" .. ((RepriseHC.GetLevelCap and RepriseHC.GetLevelCap()) or (RepriseHC.levelCap or 60))) then
-      local gf = db.guildFirsts[p.id]
-      if not gf then
-        gf = {
-          winner = p.playerKey,
-          winnerName = p.name,
-          when = when,
-          dbVersion = entryVersion,
-        }
-        db.guildFirsts[p.id] = gf
-      else
-        if not gf.winner then gf.winner = p.playerKey end
-        if not gf.winnerName then gf.winnerName = p.name end
-        if not gf.when or gf.when == 0 then gf.when = when end
-        if targetVersion ~= 0 then
-          gf.dbVersion = targetVersion
-        else
-          gf.dbVersion = tonumber(gf.dbVersion or gf.dbv) or entryVersion
-        end
-      end
-      if gf then gf.dbv = nil end
-    end
-
-    if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
-
-  elseif topic == "DEATH" then
-    if not ShouldAcceptIncremental(p.dbv, sender) then return end
-    normalizeKeyAndName(p, sender)
-
-    -- Check for duplicates using normalized comparison
-    local seen = false
-    local function normalizeForCompare(key)
-      return (key or ""):lower():gsub("%-.*$", "")
-    end
-    local incomingNorm = normalizeForCompare(p.playerKey or p.name)
-
-    for _, d in ipairs(RepriseHC.GetDeathLog()) do
-      if normalizeForCompare(d.playerKey or d.name) == incomingNorm then
-        seen = true
-        break
-      end
-    end
-    
-    if seen then
-      if RHC_DEBUG then print("|cff99ccff[RHC]|r DEATH already logged for", p.playerKey, "— skipping") end
       return
     end
+    ApplyAchievementPayload(p, sender)
 
-    local eventWhen = tonumber(p.when) or tonumber(p.time) or time()
-    eventWhen = eventWhen > 0 and math.floor(eventWhen) or time()
-    local entryVersion = tonumber(p.dbVersion or p.dbv) or CurrentDbVersion()
-    table.insert(RepriseHC.GetDeathLog(), {
-      playerKey=p.playerKey or p.name, name=p.name, level=p.level, class=p.class, race=p.race,
-      zone=p.zone, subzone=p.subzone, when=eventWhen, dbVersion=entryVersion
-    })
 
-    if RHC_DEBUG then print("|cff99ccff[RHC]|r DEATH inserted for", p.playerKey or p.name or "?") end
-
-    -- Guild announcement for our own death (skip others)
-    local announceToGuild = false
-    if IsInGuild() and RepriseHC.GetShowToGuild and RepriseHC.GetShowToGuild() then
-      local myKey = RepriseHC.PlayerKey and RepriseHC.PlayerKey() or UnitName("player")
-      local myNorm = normalizeForCompare(myKey)
-      local isSelfSource = IsSelf(sender) or IsSelf(sid)
-      if incomingNorm ~= "" and incomingNorm == myNorm and isSelfSource then
-        local now = time()
-        local age = now - (eventWhen or now)
-        if age < 0 then age = 0 end
-        local recentlyAnnounced = (now - lastOwnDeathAnnounceAt) < 60
-        if age < 120 and not recentlyAnnounced then
-          announceToGuild = true
-          lastOwnDeathAnnounceAt = now
-        end
+  elseif topic == "DEATH" then
+    local accept, incomingVersion, _, reason = ShouldAcceptIncremental(p.dbv, sender)
+    if not accept then
+      if reason == "future" then
+        QueuePendingIncremental(incomingVersion, { topic = "DEATH", payload = DeepCopy(p) }, sender, sid, channel, q, t.ts)
       end
+      return
     end
-    if announceToGuild then
-      local where = (p.zone or "Unknown")
-      if p.subzone and p.subzone ~= "" then where = where .. " - " .. p.subzone end
-      local msg = string.format("%s has died (lvl %d) in %s.", p.name or p.playerKey or "Unknown", p.level or 0, where)
-      SendChatMessage(msg, "GUILD")
-    end
+    ApplyDeathPayload(p, sender, sid)
 
-    if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
 
   elseif topic == "GROUP" then
-    if not ShouldAcceptIncremental(p.dbv, sender) then return end
-    normalizeKeyAndName(p, sender)
-
-    local rawGroup = p.group or p.groupName or p.value or p.assignment
-    if type(rawGroup) == "string" then
-      rawGroup = rawGroup:gsub("^%s+", ""):gsub("%s+$", "")
-      if rawGroup == "" then rawGroup = nil end
-    else
-      rawGroup = nil
-    end
-
-    local when = tonumber(p.when or p.time) or time()
-    local incomingVersion = tonumber(p.dbVersion or p.dbv) or CurrentDbVersion()
-    if incomingVersion < 0 then incomingVersion = 0 end
-    local incomingGroupVersion = tonumber(p.groupVersion or p.groupMinor or p.gv) or 0
-    if incomingGroupVersion < 0 then incomingGroupVersion = 0 end
-
-    local changed = false
-    local db = SafeDB()
-    db.groupAssignments = db.groupAssignments or {}
-
-    if rawGroup then
-      if RepriseHC and RepriseHC.UpdateGroupAssignment then
-        changed = RepriseHC.UpdateGroupAssignment(p.playerKey, rawGroup, {
-          when = when,
-          dbVersion = incomingVersion ~= 0 and incomingVersion or nil,
-          groupVersion = incomingGroupVersion,
-        })
-      else
-        db.groupAssignments[p.playerKey] = {
-          group = rawGroup,
-          when = when,
-          dbVersion = incomingVersion,
-          groupVersion = incomingGroupVersion,
-        }
-        db.groupAssignments[p.playerKey].dbv = nil
-        if incomingGroupVersion and incomingGroupVersion > 0 then
-          db.config = db.config or {}
-          local currentMinor = tonumber(db.config.groupMinorVersion) or 0
-          if incomingGroupVersion > currentMinor then
-            db.config.groupMinorVersion = incomingGroupVersion
-          end
-          RememberAssignmentMinor(p.playerKey, incomingGroupVersion)
-        end
-        changed = true
+    local accept, incomingVersion, _, reason = ShouldAcceptIncremental(p.dbv, sender)
+    if not accept then
+      if reason == "future" then
+        QueuePendingIncremental(incomingVersion, { topic = "GROUP", payload = DeepCopy(p) }, sender, sid, channel, q, t.ts)
       end
-    else
-      if RepriseHC and RepriseHC.UpdateGroupAssignment then
-        changed = RepriseHC.UpdateGroupAssignment(p.playerKey, nil, { groupVersion = incomingGroupVersion })
-      else
-        if db.groupAssignments[p.playerKey] ~= nil then
-          db.groupAssignments[p.playerKey] = nil
-          changed = true
-        end
-        if incomingGroupVersion and incomingGroupVersion > 0 then
-          db.config = db.config or {}
-          local currentMinor = tonumber(db.config.groupMinorVersion) or 0
-          if incomingGroupVersion > currentMinor then
-            db.config.groupMinorVersion = incomingGroupVersion
-          end
-          RememberAssignmentMinor(p.playerKey, incomingGroupVersion)
-        end
-      end
+      return
     end
+    ApplyGroupPayload(p, sender)
 
-    if changed and RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
 
   elseif topic == "RESET" then
     local sig = tonumber(p.sig)
@@ -1774,6 +1859,24 @@ local function HandleIncoming(prefix, payload, channel, sender)
     haveSnapshot = true
     if RepriseHC.Print and RHC_DEBUG then RepriseHC.Print("Synchronized snapshot.") end
     if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
+  end
+end
+
+ProcessPendingIncrementalEntry = function(entry)
+  if type(entry) ~= "table" then return end
+  local msg = entry.message
+  if type(msg) ~= "table" then return end
+  local payload = msg.payload
+  local topic = msg.topic
+  if type(payload) ~= "table" or type(topic) ~= "string" then return end
+
+  local clone = DeepCopy(payload)
+  if topic == "ACH" then
+    ApplyAchievementPayload(clone, entry.sender)
+  elseif topic == "DEATH" then
+    ApplyDeathPayload(clone, entry.sender, entry.sid)
+  elseif topic == "GROUP" then
+    ApplyGroupPayload(clone, entry.sender)
   end
 end
 
