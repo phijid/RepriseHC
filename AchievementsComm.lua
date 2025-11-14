@@ -215,7 +215,9 @@ local function QueuePendingIncremental(version, message, sender, sid, channel, s
     ts = ts,
   })
 
-  EnsurePendingIncrementalCheck(target, message and message.topic)
+  local topic = message and message.topic
+  local urgent = (type(topic) == "string" and topic:upper() == "DEATH")
+  EnsurePendingIncrementalCheck(target, topic, urgent)
 end
 
 local function FlushPendingIncrementals(version)
@@ -282,42 +284,68 @@ local function PruneLocalDataToVersion(version)
   return removed
 end
 
-EnsurePendingIncrementalCheck = function(version, topic)
+EnsurePendingIncrementalCheck = function(version, topic, urgent)
   local target = tonumber(version) or 0
   if target <= 0 then return end
   if not C_Timer or not C_Timer.After then return end
-
-  if pendingIncrementalTimers[target] then return end
-  pendingIncrementalTimers[target] = true
 
   local reason = "pending"
   if type(topic) == "string" and topic ~= "" then
     reason = "pending-" .. topic:lower()
   end
 
+  local delay = urgent and 1 or 5
+  local attemptsKey = target
+
+  local existing = pendingIncrementalTimers[target]
+  local generation = 1
+  if existing then
+    if not urgent and existing.urgent then
+      -- A faster timer is already queued.
+      return
+    end
+    if not urgent and existing.delay <= delay then
+      return
+    end
+    generation = (existing.gen or 0) + 1
+  end
+
+  pendingIncrementalTimers[target] = { gen = generation, delay = delay, urgent = urgent, topic = topic }
+
+  if urgent and RequestFullSnapshot then
+    RequestFullSnapshot(reason, true)
+  end
+
   local function poll()
+    local timerInfo = pendingIncrementalTimers[target]
+    if not timerInfo or timerInfo.gen ~= generation then
+      return
+    end
     pendingIncrementalTimers[target] = nil
 
     local current = CurrentDbVersion()
     if current >= target then
-      pendingIncrementalAttempts[target] = nil
+      pendingIncrementalAttempts[attemptsKey] = nil
       FlushPendingIncrementals(current)
       return
     end
 
-    local attempts = (pendingIncrementalAttempts[target] or 0) + 1
-    pendingIncrementalAttempts[target] = attempts
-    if attempts <= 6 then
-      if RequestFullSnapshot then
-        RequestFullSnapshot(reason, true)
-      end
-      EnsurePendingIncrementalCheck(target, topic)
+    local attempts = (pendingIncrementalAttempts[attemptsKey] or 0) + 1
+    pendingIncrementalAttempts[attemptsKey] = attempts
+
+    local maxAttempts = urgent and 12 or 6
+    if RequestFullSnapshot then
+      RequestFullSnapshot(reason, true)
+    end
+
+    if attempts < maxAttempts then
+      EnsurePendingIncrementalCheck(target, topic, urgent)
     else
-      pendingIncrementalAttempts[target] = nil
+      pendingIncrementalAttempts[attemptsKey] = nil
     end
   end
 
-  C_Timer.After(5, poll)
+  C_Timer.After(delay, poll)
 end
 
 local function PruneLocalDataForCurrentVersion()
