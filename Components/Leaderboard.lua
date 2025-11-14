@@ -42,19 +42,11 @@ function RepriseHC.RenderLeaderboard(page)
     else
       fs:SetText(("%d. %s"):format(i, displayName))
     end
-    if isPlayer then
-      fs:SetTextColor(0.1,0.1,0.1,1)
-    else
-      fs:SetTextColor(1,1,1,1)
-    end
 
     local pts = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    pts:SetPoint("RIGHT", -8, 0); pts:SetText(("%d pts"):format(char.points))
-    if isPlayer then
-      pts:SetTextColor(0.2,0.15,0,1)
-    else
-      pts:SetTextColor(1,0.96,0.41,1)
-    end
+    pts:SetPoint("RIGHT", -8, 0)
+    pts:SetText(("|cfff5f268%d pts|r"):format(char.points))
+    pts:SetTextColor(1,0.96,0.41,1)
 
     y = y - 22
   end
