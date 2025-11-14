@@ -35,21 +35,21 @@ end
 
 -- Catalog build
 
-local GF_POINTS = { ALL=200, CLASS=100, RACE=100 }
+local GF_POINTS = { ALL=100, CLASS=75, RACE=75 }
 
 function RepriseHC.BuildCatalog()
   local cat = { ["Level Milestones"]={}, ["Speedrun"]={}, ["Quest Milestones"]={}, ["Professions"]={}, ["Dungeons"]={}, ["Guild First"]={} }
 
   for _, lvl in ipairs(RepriseHC.levels) do
     if lvl <= RepriseHC.MaxMilestone() then
-      table.insert(cat["Level Milestones"], { id="LEVEL_"..lvl, name="Reached Level "..lvl, points=lvl*2 })
+      table.insert(cat["Level Milestones"], { id="LEVEL_"..lvl, name="Reached Level "..lvl, points=lvl*4 })
     end
   end
   for skill in pairs(RepriseHC.professions) do
     for _, t in ipairs(RepriseHC.profThreshold) do
       if (t.levelRequirement <= ((RepriseHC.GetLevelCap and RepriseHC.GetLevelCap()) or (RepriseHC.levelCap or 60))) then
         local title = (t.threshold==75 and "Apprentice") or (t.threshold==150 and "Journeyman") or (t.threshold==225 and "Expert") or "Artisan"
-        local pts   = (t.threshold==75 and 15) or (t.threshold==150 and 30) or (t.threshold==225 and 45) or 60
+        local pts   = (t.threshold==75 and 30) or (t.threshold==150 and 60) or (t.threshold==225 and 90) or 120
         local displayName = string.format("%s %s - %d", skill, title, t.threshold)
         table.insert(cat["Professions"], { id=skill.."_"..t.threshold, name=displayName, points=pts, skill=skill, threshold=t.threshold, rank=title })
       end
@@ -196,7 +196,7 @@ function RepriseHC.BuildCatalog()
   for _, it in ipairs(sr) do
     if (it.level) <= RepriseHC.MaxMilestone() then
       local id  = it.id or ("SPEED_"..(it.level or 0))
-      local pts = it.points or ((it.level or 0) * 2)
+      local pts = it.points or ((it.level or 0) * 4)
       local nm  = it.name or ("Reach level "..(it.level or 0).." by "..(it.hours or 0).." hours")
       table.insert(cat["Speedrun"], { id=id, name=nm, points=pts, level=it.level, hours=it.hours })
     end

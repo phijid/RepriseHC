@@ -1,8 +1,8 @@
 ## Title: RepriseHC
-## Interface: 11507
+## Interface: 11508
 ## Notes: Reprise Hardcore guild addon
 ## Author: Phijid
-## Version: 0.9.0b
+## Version: 0.13.0a
 ## OptionalDeps: Ace3
 ## X-Embeds: Ace3
 ## SavedVariables: RepriseHCAchievementsDB, RepriseHCUiDB
