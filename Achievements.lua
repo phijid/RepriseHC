@@ -48,7 +48,7 @@ end
 local DUNGEON_MINLEVEL = {
   ["Ragefire Chasm"]= { minLevel=10, faction="Horde" } ,
   ["Wailing Caverns"]= { minLevel=17 } , 
-  ["The Deadmines"]= { minLevel=17, faction="Alliance"  } , 
+  ["The Deadmines"]= { minLevel=17  } , 
   ["Shadowfang Keep"]= { minLevel=22 } , 
   ["Blackfathom Deeps"]= { minLevel=24 } , 
   ["The Stockade"]= { minLevel=24, faction="Alliance" } , 
@@ -114,8 +114,8 @@ do
     end
   end
   table.sort(work,function(a,b) if a.l==b.l then return a.d<b.d end return a.l<b.l end)
-  local pts,last=nil,nil; pts=15
-  for _,w in ipairs(work) do if last and w.l>last then pts=pts+5 end last=w.l; DUNGEON_POINTS[w.d]=pts end
+  local pts,last=nil,nil; pts=50
+  for _,w in ipairs(work) do if last and w.l>last then pts=pts+10 end last=w.l; DUNGEON_POINTS[w.d]=pts end
 end
 
 -- Expose helpers for UI
@@ -256,7 +256,7 @@ function RepriseHC.Ach_AwardLevelsUpTo(level)
     if level >= th and th <= maxMilestone then
       local id = "LEVEL_"..th
       local nm = "Reached Level "..th
-      local pts = th*2
+      local pts = th*4
       if EarnAchievement(id, nm, pts) then
         local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format(nm, pts)
         Print(msg)
@@ -318,7 +318,7 @@ function RepriseHC.Ach_CheckProfessions(opts)
       if th.levelRequirement <= ((RepriseHC.GetLevelCap and RepriseHC.GetLevelCap()) or (RepriseHC.levelCap or 60)) and newRank >= th.threshold and (force or oldRank < th.threshold) then
         local id = skill .. "_" .. th.threshold
         local title = (th.threshold==75 and "Apprentice") or (th.threshold==150 and "Journeyman") or (th.threshold==225 and "Expert") or "Artisan"
-        local pts = (th.threshold==75 and 15) or (th.threshold==150 and 30) or (th.threshold==225 and 45) or 60
+        local pts = (th.threshold==75 and 30) or (th.threshold==150 and 60) or (th.threshold==225 and 90) or 120
         local nm = string.format("%s %s - %d", skill, title, th.threshold)
         if EarnAchievement(id, nm, pts) then
           local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format(nm, pts)
@@ -358,7 +358,7 @@ local function AwardSpeedrunIfEligible(totalSeconds)
     if totalSeconds <= (hours * 3600) then
       local id  = "SPEED_"..lvl
       local nm  = ("Reach level %d by %d hours"):format(lvl, hours)
-      local pts = lvl * 2 
+      local pts = lvl * 6 
       if EarnAchievement(id, nm, pts) then
         local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format(nm, pts)
         Print(msg)
@@ -380,7 +380,7 @@ function RepriseHC.Ach_ListSpeedruns()
         level  = lvl,
         hours  = h,
         name   = ("Reach level %d by %d hours"):format(lvl, h),
-        points = lvl * 2,
+        points = lvl * 6,
       })
     end
   end
@@ -392,9 +392,9 @@ end
 local QUEST_MILESTONES = {
   -- { questId = 783, levelCap = 2,  title = "A Threat Within", faction = "Alliance" },
   -- { questId = 5261, levelCap = 2,  title = "Eagan Peltskinner", faction = "Alliance" },
-  -- { questId = 363, levelCap = 10,  title = "Rude Awakening", faction = "Horde" },
-  -- { questId = 4641, levelCap = 10,  title = "Your Place In The World", faction = "Horde" },
-  -- { questId = 753, levelCap = 10,  title = "A Humble Task", faction = "Horde" },
+  { questId = 363, levelCap = 10,  title = "Rude Awakening", faction = "Horde" },
+  { questId = 4641, levelCap = 10,  title = "Your Place In The World", faction = "Horde" },
+  { questId = 753, levelCap = 10,  title = "A Humble Task", faction = "Horde" },
   { questId = 2561, levelCap = 9,  title = "Druid of the Claw", faction = "Alliance" },  
   { questId = 314,  levelCap = 10, title = "Protecting the Herd", faction = "Alliance" },
   { questId = 176,  levelCap = 11, title = "Wanted: Hogger", faction = "Alliance" },
@@ -443,12 +443,12 @@ local QUEST_MILESTONES = {
 }
 
 local function QuestPointsForLevelCap(cap)
-  if cap <= 10 then return 15
-  elseif cap <= 20 then return 25
-  elseif cap <= 30 then return 35
-  elseif cap <= 40 then return 45
-  elseif cap <= 50 then return 55
-  else return 65 end
+  if cap <= 10 then return 30
+  elseif cap <= 20 then return 50
+  elseif cap <= 30 then return 70
+  elseif cap <= 40 then return 90
+  elseif cap <= 50 then return 110
+  else return 130 end
 end
 
 -- Expose to UI
@@ -558,13 +558,13 @@ function RepriseHC.Ach_TryGuildFirsts(levelOverride)
 
   -- overall
   if LockGuildFirst("FIRST_" .. cap, pkey, pname) then
-    if EarnAchievement("FIRST_" .. cap, "Guild First " .. cap, 200) then
-      local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First " .. cap, 200)
+    if EarnAchievement("FIRST_" .. cap, "Guild First " .. cap, 100) then
+      local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First " .. cap, 100)
       Print(msg)
       if (RepriseHC.GetShowToGuild()) then
         SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
       end
-      SyncBroadcastAward("FIRST_" .. cap, "Guild First " .. cap, 200)
+      SyncBroadcastAward("FIRST_" .. cap, "Guild First " .. cap, 100)
     end
   end
 
@@ -576,13 +576,13 @@ function RepriseHC.Ach_TryGuildFirsts(levelOverride)
 
   if LockGuildFirst(idc, pkey, pname) then
     local title = "Guild First " .. cap .. " " .. (classDisp or "Class")
-    if EarnAchievement(idc, title, 100) then
-      local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First " .. cap .. " " .. (classDisp or "Class"), 100)
+    if EarnAchievement(idc, title, 75) then
+      local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First " .. cap .. " " .. (classDisp or "Class"), 75)
       Print(msg)
       if (RepriseHC.GetShowToGuild()) then
         SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
       end
-      SyncBroadcastAward(idc, title, 100)
+      SyncBroadcastAward(idc, title, 75)
     end
   end
 
@@ -594,13 +594,13 @@ function RepriseHC.Ach_TryGuildFirsts(levelOverride)
 
   if LockGuildFirst(idr, pkey, pname) then
     local title = "Guild First " .. cap .. " " .. (raceDisp or "Race")
-    if EarnAchievement(idr, title, 100) then
-      local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First " .. cap .. " " .. (raceDisp or "Race"), 100)
+    if EarnAchievement(idr, title, 75) then
+      local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First " .. cap .. " " .. (raceDisp or "Race"), 75)
       Print(msg)
       if (RepriseHC.GetShowToGuild()) then
         SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
       end
-      SyncBroadcastAward(idr, title, 100)
+      SyncBroadcastAward(idr, title, 75)
     end
   end
 end
