@@ -67,10 +67,32 @@ UI.titleBG:SetPoint("TOPLEFT", 6, -6)
 UI.titleBG:SetPoint("TOPRIGHT", -6, -6)
 UI.titleBG:SetHeight(28)
 
+local BASE_TITLE = "RepriseHC — Guild Achievements"
+
 UI.titleFS = UI:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 UI.titleFS:SetPoint("LEFT", UI.titleBG, "LEFT", 10, 0)
-UI.titleFS:SetText("RepriseHC — Guild Achievements")
+UI.titleFS:SetText(BASE_TITLE)
 UI.titleFS:SetTextColor(1, .82, 0, 1)
+
+local function UpdateTitle()
+  if not UI or not UI.titleFS then return end
+
+  local version
+  if RepriseHC and RepriseHC.GetDbVersion then
+    local ok, ver = pcall(RepriseHC.GetDbVersion)
+    if ok and ver ~= nil then
+      version = tostring(ver)
+    end
+  end
+
+  if version and version ~= "" then
+    UI.titleFS:SetText(string.format("%s (DB v%s)", BASE_TITLE, version))
+  else
+    UI.titleFS:SetText(BASE_TITLE)
+  end
+end
+
+UpdateTitle()
 
 local close = CreateFrame("Button", nil, UI, "UIPanelCloseButton")
 close:SetPoint("TOPRIGHT", 2, 2)
@@ -105,8 +127,9 @@ dragHandle:SetScript("OnDragStop", function()
 end)
 
 local Sidebar = CreateFrame("Frame", nil, UI, "BackdropTemplate")
-Sidebar:SetSize(210, 520)
-Sidebar:SetPoint("TOPLEFT", 8, -36)
+Sidebar:SetPoint("TOPLEFT", UI, "TOPLEFT", 8, -36)
+Sidebar:SetPoint("BOTTOMLEFT", UI, "BOTTOMLEFT", 8, 8)
+Sidebar:SetWidth(210)
 Sidebar:SetBackdrop({
   bgFile="Interface\\Buttons\\WHITE8X8", edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",
   tile=true, tileSize=8, edgeSize=12, insets={left=3,right=3,top=3,bottom=3}
@@ -277,6 +300,7 @@ function RepriseHC.UIRefresh()
   if RefreshSidebar then
     RefreshSidebar()
   end
+  UpdateTitle()
 end
 
 SLASH_RHCU1 = "/rhcu"
@@ -296,6 +320,7 @@ end
 
 UI:SetScript("OnShow", function()
   RestoreUiPosition(UI)
+  UpdateTitle()
   UI:Refresh()
   RefreshSidebar()
   if RepriseHC and RepriseHC.Comm_SyncNow then
