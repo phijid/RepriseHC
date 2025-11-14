@@ -1,6 +1,6 @@
 RepriseHC = RepriseHC or {}
 RepriseHC.name = "RepriseHC"
-RepriseHC.version = "0.14.0a"
+RepriseHC.version = "0.15.0a"
 RepriseHC.allowedGuilds = { ["Reprise"] = true }
 
 local DEFAULT_DB_VERSION = 1
