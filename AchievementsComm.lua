@@ -722,6 +722,12 @@ function RepriseHC.Comm_RequestSnapshot()
   return false
 end
 
+function RepriseHC.Comm_SyncNow(reason)
+  if not GuildSync then return false end
+  GuildSync(true, reason or "manual")
+  return true
+end
+
 local function SendDirectToOtherOnline(payload)
   if not IsInGuild() then return false end
   PollGuildRoster()
