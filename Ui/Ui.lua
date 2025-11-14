@@ -298,6 +298,9 @@ UI:SetScript("OnShow", function()
   RestoreUiPosition(UI)
   UI:Refresh()
   RefreshSidebar()
+  if RepriseHC and RepriseHC.Comm_SyncNow then
+    RepriseHC.Comm_SyncNow("ui")
+  end
 end)
 
 UI:RegisterEvent("CHAT_MSG_ADDON")
