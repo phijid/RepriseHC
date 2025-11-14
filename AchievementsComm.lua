@@ -179,7 +179,10 @@ local function RememberAssignmentMinor(playerKey, minor)
 end
 
 local pendingIncrementals = {}
+local pendingIncrementalTimers = {}
+local pendingIncrementalAttempts = {}
 local ProcessPendingIncrementalEntry
+local EnsurePendingIncrementalCheck
 
 local function DeepCopy(value)
   if type(value) ~= "table" then return value end
@@ -211,6 +214,8 @@ local function QueuePendingIncremental(version, message, sender, sid, channel, s
     seq = seq,
     ts = ts,
   })
+
+  EnsurePendingIncrementalCheck(target, message and message.topic)
 end
 
 local function FlushPendingIncrementals(version)
@@ -222,6 +227,7 @@ local function FlushPendingIncrementals(version)
         ProcessPendingIncrementalEntry(entry)
       end
       pendingIncrementals[v] = nil
+      pendingIncrementalAttempts[v] = nil
     end
   end
 end
@@ -274,6 +280,44 @@ local function PruneLocalDataToVersion(version)
     RepriseHC.RefreshUI()
   end
   return removed
+end
+
+EnsurePendingIncrementalCheck = function(version, topic)
+  local target = tonumber(version) or 0
+  if target <= 0 then return end
+  if not C_Timer or not C_Timer.After then return end
+
+  if pendingIncrementalTimers[target] then return end
+  pendingIncrementalTimers[target] = true
+
+  local reason = "pending"
+  if type(topic) == "string" and topic ~= "" then
+    reason = "pending-" .. topic:lower()
+  end
+
+  local function poll()
+    pendingIncrementalTimers[target] = nil
+
+    local current = CurrentDbVersion()
+    if current >= target then
+      pendingIncrementalAttempts[target] = nil
+      FlushPendingIncrementals(current)
+      return
+    end
+
+    local attempts = (pendingIncrementalAttempts[target] or 0) + 1
+    pendingIncrementalAttempts[target] = attempts
+    if attempts <= 6 then
+      if RequestFullSnapshot then
+        RequestFullSnapshot(reason, true)
+      end
+      EnsurePendingIncrementalCheck(target, topic)
+    else
+      pendingIncrementalAttempts[target] = nil
+    end
+  end
+
+  C_Timer.After(5, poll)
 end
 
 local function PruneLocalDataForCurrentVersion()
