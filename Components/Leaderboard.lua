@@ -29,18 +29,18 @@ function RepriseHC.RenderLeaderboard(page)
     local stripe = row:CreateTexture(nil, "BACKGROUND")
     stripe:SetAllPoints(); stripe:SetTexture("Interface\\Buttons\\WHITE8X8")
     local isPlayer = (playerKey and char.name == playerKey)
-    if isPlayer then
-      stripe:SetVertexColor(1, 0.9, 0.3, 0.35)
-    else
-      stripe:SetVertexColor(1,1,1, i%2==0 and 0.06 or 0.03)
-    end
+    stripe:SetVertexColor(1,1,1, i%2==0 and 0.06 or 0.03)
 
     local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     fs:SetPoint("LEFT", 8, 0)
+    local displayName = char.name
+    if isPlayer then
+      displayName = "|cffffd100" .. char.name .. "|r"
+    end
     if RepriseHC and RepriseHC.IsDead and RepriseHC.IsDead(char.name) then
-      fs:SetText(("%d. %s %s"):format(i, RepriseHC.skull, char.name))
+      fs:SetText(("%d. %s %s"):format(i, RepriseHC.skull, displayName))
     else
-      fs:SetText(("%d. %s"):format(i, char.name))
+      fs:SetText(("%d. %s"):format(i, displayName))
     end
     if isPlayer then
       fs:SetTextColor(0.1,0.1,0.1,1)
