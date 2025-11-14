@@ -235,12 +235,18 @@ local function SyncBroadcastAward(id, name, pts)
     when = when,
     dbVersion = dbVersion,
   })
+  if RepriseHC.Comm_SyncNow then
+    RepriseHC.Comm_SyncNow("achievement")
+  end
 end
 
 function RepriseHC.SyncBroadcastDeath(level, class, race, zone, subzone, name)
   local whenStr = tostring(time())
   Broadcast("DEAD", string.format("%s;%d;%s;%s;%s;%s;%s;%s",
     PlayerKey(), level or 0, class or "", race or "", zone or "", subzone or "", name or "", whenStr))
+  if RepriseHC and RepriseHC.Comm_SyncNow then
+    RepriseHC.Comm_SyncNow("death")
+  end
 end
 
 -- ========= Level/Professions =========
@@ -679,15 +685,24 @@ function CaptureDeath()
 
   if not inserted then return end
 
+  local deathSyncRequested = false
+
   local function send()
+    local sent = false
     if RepriseHC and RepriseHC.SyncBroadcastDeath then
       RepriseHC.SyncBroadcastDeath(level, eclass, erace, zone, sub, name)
+      sent = true
     elseif RepriseHC and RepriseHC.Comm_Send then
       local currentVersion = (RepriseHC and RepriseHC.GetDbVersion and RepriseHC.GetDbVersion()) or 0
       RepriseHC.Comm_Send("DEATH", {
         playerKey = pkey, name = name, level = level, class = eclass, race = erace,
         zone = zone, subzone = sub, when = time(), dbVersion = currentVersion, dbv = currentVersion
       })
+      sent = true
+    end
+    if sent and (not deathSyncRequested) and RepriseHC and RepriseHC.Comm_SyncNow then
+      RepriseHC.Comm_SyncNow("death")
+      deathSyncRequested = true
     end
   end
 
