@@ -244,6 +244,9 @@ function RepriseHC.SyncBroadcastDeath(level, class, race, zone, subzone, name)
   local whenStr = tostring(time())
   Broadcast("DEAD", string.format("%s;%d;%s;%s;%s;%s;%s;%s",
     PlayerKey(), level or 0, class or "", race or "", zone or "", subzone or "", name or "", whenStr))
+  if RepriseHC and RepriseHC.Comm_SyncNow then
+    RepriseHC.Comm_SyncNow("death")
+  end
 end
 
 -- ========= Level/Professions =========
