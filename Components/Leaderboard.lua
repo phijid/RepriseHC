@@ -42,7 +42,6 @@ function RepriseHC.RenderLeaderboard(page)
     else
       fs:SetText(("%d. %s"):format(i, displayName))
     end
-    fs:SetTextColor(1,1,1,1)
 
     local pts = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     pts:SetPoint("RIGHT", -8, 0)
