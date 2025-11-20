@@ -188,6 +188,43 @@ local function earnedSet()
   return set
 end
 
+local function DebugCategory(catName, list, earnedLookup)
+  if not (RepriseHC and RepriseHC.DebugEnabled and RepriseHC.DebugLog) then return end
+
+  local earnedCount = 0
+  for _, ach in ipairs(list) do
+    if earnedLookup[ach.id] then
+      earnedCount = earnedCount + 1
+    end
+  end
+
+  local entries = {}
+  if catName == "Speedrun" then
+    for _, ach in ipairs(list) do
+      table.insert(entries, string.format("L%s@%sh", tostring(ach.level or "?"), tostring(ach.hours or "?")))
+    end
+  elseif catName == "Level Milestones" then
+    for _, ach in ipairs(list) do
+      table.insert(entries, tostring(ach.id or ach.name or "?"))
+    end
+  elseif catName == "Quest Milestones" then
+    for _, ach in ipairs(list) do
+      table.insert(entries, string.format("%s (cap %s)", ach.name or (ach.id or "?"), tostring(ach.levelCap or "?")))
+    end
+  elseif catName == "Professions" then
+    for _, ach in ipairs(list) do
+      table.insert(entries, string.format("%s %s %s", ach.skill or "?", ach.rank or "?", tostring(ach.threshold or "?")))
+    end
+  elseif catName == "Guild First" then
+    for _, ach in ipairs(list) do
+      table.insert(entries, string.format("%s %s cap %s", ach.gfType or "?", ach.gfKey or "?", tostring(ach.levelCap or "?")))
+    end
+  end
+
+  local orderText = (#entries > 0) and table.concat(entries, ", ") or "(no entries)"
+  RepriseHC.DebugLog(string.format("[UI] Rendering %s panel: %d entries (%d earned). Order: %s", catName, #list, earnedCount, orderText))
+end
+
 function RepriseHC.RenderCategory(page, catName)
   local y = -10
   y = RepriseHC.Header(page, catName, y)
@@ -222,6 +259,8 @@ function RepriseHC.RenderCategory(page, catName)
   elseif catName == "Speedrun" then
     table.sort(list, function(a,b) return (a.level or 0) < (b.level or 0) end)
   end
+
+  DebugCategory(catName, list, got)
 
   if #list == 0 then
     local fs = page:CreateFontString(nil, "OVERLAY", "GameFontDisableLarge")
