@@ -1275,6 +1275,7 @@ local function MergeSnapshot(p)
     end
   end
 
+  local guildFirstsToResolve = {}
   for id, entry in pairs(p.guildFirsts or {}) do
     if type(entry) == "table" then
       local entryVersion = tonumber(entry.dbVersion or entry.dbv) or localVersion
@@ -1292,8 +1293,17 @@ local function MergeSnapshot(p)
         local existing = db.guildFirsts[id]
         if not existing or (tonumber(existing.when) or 0) > clone.when then
           db.guildFirsts[id] = clone
+          guildFirstsToResolve[id] = true
+        else
+          guildFirstsToResolve[id] = guildFirstsToResolve[id] or true
         end
       end
+    end
+  end
+
+  if RepriseHC and RepriseHC.ResolveGuildFirstConflicts then
+    for id in pairs(guildFirstsToResolve) do
+      RepriseHC.ResolveGuildFirstConflicts(id)
     end
   end
 

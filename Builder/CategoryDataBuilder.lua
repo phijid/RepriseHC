@@ -33,6 +33,34 @@ local function DungeonBossName(lookupDungeon)
   return lookupDungeon
 end
 
+local function HighlightRule(text)
+  return string.format("|cffffd100%s|r", tostring(text or ""))
+end
+
+local function Icon(path, size)
+  return string.format("|T%s:%d|t", tostring(path or ""), tonumber(size) or 16)
+end
+
+local RULES_PAGE = {
+  {
+    title = string.format("%s Event 1: Into Ragefire Chasm", Icon("Interface\\Icons\\inv_misc_pocketwatch_02", 16)),
+    lines = {
+      string.format("%s until %s players can level a fresh character on Doomhowl as long as they are in <Reprise>", HighlightRule("Starting Friday November 21st at 7pm EST"), HighlightRule("announced date (TBD)")),
+      string.format("Players are hard capped at %s before zoning into RFC", HighlightRule("Level 16")),
+      string.format("Players cannot enter Ragefire Chasm until %s.", HighlightRule("announced date (TBD)")),
+      string.format("%s Any runs started outside the %s will not be validated; leveling while inside the dungeon is OK!", Icon("Interface\\DialogFrame\\UI-Dialog-Icon-AlertNew", 14), HighlightRule("announced date (TBD)")),
+    },
+  },
+  {
+    title = string.format("%s Achievement Leaderboard", Icon("Interface\\Icons\\inv_misc_trophy_argent", 16)),
+    lines = {
+      "Earn achievements through various categories as you progress",
+      "Each achievement you get will give you points on a leaderboard",
+      "Prizes will be awarded based on leaderboard points at the end of each event!",
+    },
+  },
+}
+
 -- Catalog build
 
 local GF_POINTS = { ALL=100, CLASS=75, RACE=75 }
@@ -203,4 +231,16 @@ function RepriseHC.BuildCatalog()
   end
 
   return cat
+end
+
+function RepriseHC.BuildRulesPageData()
+  local copy = {}
+  for _, section in ipairs(RULES_PAGE) do
+    local lines = {}
+    for _, line in ipairs(section.lines or {}) do
+      table.insert(lines, line)
+    end
+    table.insert(copy, { title = section.title, lines = lines })
+  end
+  return copy
 end
