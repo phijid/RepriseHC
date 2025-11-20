@@ -289,6 +289,8 @@ function UI:Refresh()
     height = RepriseHC.RenderCategory(page, "Guild First")
   elseif id == "deathlog" then
     height = RepriseHC.RenderDeathLog(page)
+  elseif id == "rules" then
+    height = RepriseHC.RenderRules(page)
   elseif id == "earners" then
     height = RepriseHC.RenderEarners(page)
   end
