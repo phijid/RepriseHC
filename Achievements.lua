@@ -45,6 +45,7 @@ local function PlayerKey()
 end
 
 -- ========= Dungeon ordering & bosses =========
+
 local DUNGEON_MINLEVEL = {
   ["Ragefire Chasm"]= { minLevel=10, faction="Horde" } ,
   ["Wailing Caverns"]= { minLevel=17 } , 
@@ -101,6 +102,34 @@ local FINAL_BOSS = {
   ["Upper Blackrock Spire"]        = { npc=10363, boss="General Drakkisath" },
 }
 local FINAL_BOSS_BY_NPCID = {}; for d,info in pairs(FINAL_BOSS) do FINAL_BOSS_BY_NPCID[info.npc]=d end
+
+local DUNGEON_METADATA = {
+  ["Ragefire Chasm"]= { minLevel=10, faction="Horde", npc=11519, boss="Bazzalan", sort = 1 } ,
+  ["The Deadmines"]= { minLevel=17, npc=639,   boss="Edwin Vancleef", sort = 2  } , 
+  ["Wailing Caverns"]= { minLevel=17, npc=3654,  boss="Mutanus the Devourer", sort = 3 } ,   
+  ["Shadowfang Keep"]= { minLevel=22, npc=4275,  boss="Archmage Arugal", sort = 4 } , 
+  ["Blackfathom Deeps"]= { minLevel=24, npc=4829,  boss="Aku'mai", sort = 5 } , 
+  ["The Stockade"]= { minLevel=24, faction="Alliance", npc=1716,  boss="Bazil Thredd", sort = 6 } , 
+  ["Razorfen Kraul"]= { minLevel=29, npc=4421,  boss="Charlga Razorflank", sort = 7  } , 
+  ["Gnomeregan"]= { minLevel=29, npc=7800,  boss="Mekgineer Thermaplugg", sort = 8 } , 
+  ["Scarlet Monastery: Graveyard"]= { minLevel=30, npc=4543,  boss="Bloodmage Thalnos", sort = 9 } , 
+  ["Scarlet Monastery: Library"]= { minLevel=33, npc=6487,  boss="Arcanist Doan", sort = 10 } , 
+  ["Scarlet Monastery: Armory"]= { minLevel=36, npc=3975,  boss="Herod", sort = 11 } , 
+  ["Razorfen Downs"]= { minLevel=37, npc=7358,  boss="Amnennar the Coldbringer", sort = 12 } , 
+  ["Scarlet Monastery: Cathedral"]= { minLevel=38, npc=3977,  boss="High Inquisitor Whitemane", sort = 13 } , 
+  ["Uldaman"]= { minLevel=41, npc=2748,  boss="Archaedas", sort = 14 } , 
+  ["Zul'Farrak"]= { minLevel=44, npc=7267,  boss="Chief Ukorz Sandscalp", sort = 15 } , 
+  ["Maraudon"]= { minLevel=46, npc=12201, boss="Princess Theradras", sort = 16 } ,  
+  ["The Temple of Atal'Hakkar"]= { minLevel=50, npc=5709,  boss="Shade of Eranikus", sort = 17 } , 
+  ["Blackrock Depths"]= { minLevel=52, npc=9019,  boss="Emperor Dagran Thaurissan", sort = 18 } , 
+  ["Dire Maul: East"]= { minLevel=54, npc=11492, boss="Alzzin the Wildshaper", sort = 19 } , 
+  ["Lower Blackrock Spire"]= { minLevel=55, npc=9568,  boss="Overlord Wyrmthalak", sort = 20 } , 
+  ["Dire Maul: West"]= { minLevel=56, npc=11486, boss="Prince Tortheldrin", sort = 21 } , 
+  ["Dire Maul: North"]= { minLevel=56, npc=11501, boss="King Gordok", sort = 22 } , 
+  ["Stratholme"]= { minLevel=58, npc=10440, boss="Baron Rivendare", sort = 23 } , 
+  ["Scholomance"]= { minLevel=58, npc=1853,  boss="Darkmaster Gandling", sort = 24 } , 
+  ["Upper Blackrock Spire"]= { minLevel=59, npc=10363, boss="General Drakkisath", sort = 25 } , 
+}
 
 -- Points per dungeon (15 base, +5 when minlevel increases)
 local DUNGEON_POINTS = {}

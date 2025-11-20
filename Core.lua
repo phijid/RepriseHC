@@ -48,28 +48,28 @@ RepriseHC.speedrunThresholds = {
 }
 
 RepriseHC.class = {
-  WARRIOR = { name="Warrior" },
-  ROGUE   = { name="Rogue" },
-  MAGE    = { name="Mage" },
-  HUNTER  = { name="Hunter" },
-  WARLOCK = { name="Warlock" },
-  PRIEST  = { name="Priest" },
-  PALADIN = { name="Paladin", faction="Alliance" },
-  DRUID   = { name="Druid" },
-  SHAMAN  = { name="Shaman", faction="Horde" },
+  WARRIOR = { name="Warrior", sort=1 },
+  ROGUE   = { name="Rogue", sort=2 },
+  MAGE    = { name="Mage", sort=3 },
+  HUNTER  = { name="Hunter", sort=4 },
+  WARLOCK = { name="Warlock", sort=5 },
+  PRIEST  = { name="Priest", sort=6 },
+  PALADIN = { name="Paladin", faction="Alliance", sort=7 },
+  DRUID   = { name="Druid", sort=8 },
+  SHAMAN  = { name="Shaman", faction="Horde", sort=9 }
 }
 
 RepriseHC.race  = {
-  Human     = { name="Human",     faction="Alliance" },
-  Gnome     = { name="Gnome",     faction="Alliance" },
-  Dwarf     = { name="Dwarf",     faction="Alliance" },
-  ["Night Elf"] = { name="Night Elf", faction="Alliance" },
-  NightElf  = { name="Night Elf", faction="Alliance" },
-  Orc       = { name="Orc",       faction="Horde" },
-  Troll     = { name="Troll",     faction="Horde" },
-  Scourge   = { name="Undead",    faction="Horde" },
-  Undead    = { name="Undead",    faction="Horde" },
-  Tauren    = { name="Tauren",    faction="Horde" },
+  Human     = { name="Human",     faction="Alliance", sort=1 },
+  Gnome     = { name="Gnome",     faction="Alliance", sort=2 },
+  Dwarf     = { name="Dwarf",     faction="Alliance", sort=3 },
+  ["Night Elf"] = { name="Night Elf", faction="Alliance", sort=4 },
+  NightElf  = { name="Night Elf", faction="Alliance", sort=4 },
+  Orc       = { name="Orc",       faction="Horde", sort=1 },
+  Troll     = { name="Troll",     faction="Horde", sort=2 },
+  Scourge   = { name="Undead",    faction="Horde", sort=3 },
+  Undead    = { name="Undead",    faction="Horde", sort=3 },
+  Tauren    = { name="Tauren",    faction="Horde", sort=4 }
 }
 
 RepriseHC.professions = {
@@ -95,15 +95,15 @@ RepriseHC.profThreshold = {
 }
 
 RepriseHC.navigation = {
-  leaderboard = { label="Leaderboard", enabled=true },
-  standing    = { label="Group Standings", enabled=false},
-  level       = { label="Level Milestones", enabled=true },
-  speedrun    = { label="Speedrun", enabled=true },
-  quest       = { label="Quest Milestones", enabled=true },
-  prof        = { label="Professions", enabled=true },
-  dungeons    = { label="Dungeons", enabled=true },
-  guildFirst  = { label="Guild First", enabled=true },
-  deathlog    = { label="Death Log", enabled=true },
+  leaderboard = { label="Leaderboard", enabled=true, sort = 1 },
+  standing    = { label="Group Standings", enabled=false, sort = 2},
+  level       = { label="Level Milestones", enabled=true, sort = 3 },
+  speedrun    = { label="Speedrun", enabled=true, sort = 4 },
+  quest       = { label="Quest Milestones", enabled=true, sort = 5 },
+  prof        = { label="Professions", enabled=true , sort = 6},
+  dungeons    = { label="Dungeons", enabled=true, sort = 7 },
+  guildFirst  = { label="Guild First", enabled=true, sort = 8 },
+  deathlog    = { label="Death Log", enabled=true, sort = 9 },
 }
 
 RepriseHC.navigationOrder = {
