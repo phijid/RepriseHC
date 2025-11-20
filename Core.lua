@@ -1,15 +1,17 @@
 RepriseHC = RepriseHC or {}
 RepriseHC.name = "RepriseHC"
-RepriseHC.version = "0.16.0a"
+RepriseHC.version = "0.17.0a"
 RepriseHC.allowedGuilds = { ["Reprise"] = true }
 RepriseHC.DebugDeathLog = false
 RepriseHC.DebugAchievements = false
 
 local DEFAULT_DB_VERSION = 1
-RepriseHC.levelCap = { [0] = 16 }
+RepriseHC.levelCap = { [0] = 2 }
+--RepriseHC.levelCap = { [0] = 16 }
 RepriseHC.levelCapIndex = 0
 RepriseHC.maxLevelPerCap = 60
-RepriseHC.levels = {10,20,30,40,50,60}
+RepriseHC.levels = {2,10,20,30,40,50,60}
+--RepriseHC.levels = {10,20,30,40,50,60}
 local function EnsureLevelMilestones()
   local function CurrentCap()
     local idx = tonumber(RepriseHC.levelCapIndex) or 0
@@ -40,7 +42,17 @@ RepriseHC.defaultDbVersion = DEFAULT_DB_VERSION
 RepriseHC.AchievementTesting = false
 RepriseHC.skull = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_8:12:12:0:0|t"
 
+-- RepriseHC.speedrunThresholds = {
+--   [10] = 2,
+--   [20] = 12,
+--   [30] = 27,
+--   [40] = 50,
+--   [50] = 81,
+--   [60] = 120,
+-- }
+
 RepriseHC.speedrunThresholds = {
+  [2]  = 2,
   [10] = 2,
   [20] = 12,
   [30] = 27,
@@ -48,6 +60,7 @@ RepriseHC.speedrunThresholds = {
   [50] = 81,
   [60] = 120,
 }
+
 
 RepriseHC.class = {
   WARRIOR = { name="Warrior", sort=1 },
