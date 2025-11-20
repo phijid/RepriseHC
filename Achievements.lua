@@ -385,11 +385,11 @@ end
 
 -- ========= Quest Milestones =========
 local QUEST_MILESTONES = {
-  { questId = 783, levelCap = 2,  title = "A Threat Within", faction = "Alliance" },
-  { questId = 5261, levelCap = 2,  title = "Eagan Peltskinner", faction = "Alliance" },
-  { questId = 363, levelCap = 10,  title = "Rude Awakening", faction = "Horde" },
-  { questId = 4641, levelCap = 10,  title = "Your Place In The World", faction = "Horde" },
-  { questId = 753, levelCap = 10,  title = "A Humble Task", faction = "Horde" },
+  -- { questId = 783, levelCap = 2,  title = "A Threat Within", faction = "Alliance" },
+  -- { questId = 5261, levelCap = 2,  title = "Eagan Peltskinner", faction = "Alliance" },
+  -- { questId = 363, levelCap = 10,  title = "Rude Awakening", faction = "Horde" },
+  -- { questId = 4641, levelCap = 10,  title = "Your Place In The World", faction = "Horde" },
+  -- { questId = 753, levelCap = 10,  title = "A Humble Task", faction = "Horde" },
   { questId = 2561, levelCap = 9,  title = "Druid of the Claw", faction = "Alliance" },  
   { questId = 314,  levelCap = 10, title = "Protecting the Herd", faction = "Alliance" },
   { questId = 176,  levelCap = 11, title = "Wanted: Hogger", faction = "Alliance" },
