@@ -19,6 +19,16 @@ function RepriseHC.RenderDeathLog(page)
   y = y - rowH
   table.sort(dl, function(a,b) return (a.when or 0) > (b.when or 0) end)
 
+  local function classLabel(val)
+    if RepriseHC and RepriseHC.GetClassLabel then return RepriseHC.GetClassLabel(val) end
+    return tostring(val or "?")
+  end
+
+  local function raceLabel(val)
+    if RepriseHC and RepriseHC.GetRaceLabel then return RepriseHC.GetRaceLabel(val) end
+    return tostring(val or "?")
+  end
+
   for i,d in ipairs(dl) do
     local x = 6
     local row = CreateFrame("Frame", nil, page, "BackdropTemplate")
@@ -31,8 +41,8 @@ function RepriseHC.RenderDeathLog(page)
     local cols = {
       d.name or d.playerKey or "?",
       tostring(d.level or 0),
-      tostring(d.class or "?"),
-      tostring(d.race or "?"),
+      classLabel(d.class),
+      raceLabel(d.race),
       tostring(d.zone or "?"),
     }
     local cx = 6
@@ -48,7 +58,7 @@ function RepriseHC.RenderDeathLog(page)
     row:SetScript("OnEnter", function(self)
       GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
       GameTooltip:AddLine(d.name or d.playerKey or "Player", 1,1,1)
-      GameTooltip:AddLine(("Level %s  %s  %s"):format(tostring(d.level or 0), tostring(d.race or "?"), tostring(d.class or "?")), .9,.9,.9)
+      GameTooltip:AddLine(("Level %s  %s  %s"):format(tostring(d.level or 0), raceLabel(d.race), classLabel(d.class)), .9,.9,.9)
       GameTooltip:AddLine(("Zone: %s"):format(tostring(d.zone or "?")), .9,.9,1)
       if d.subzone and d.subzone ~= "" then
         GameTooltip:AddLine(("Subzone: %s"):format(tostring(d.subzone)), .8,.8,1)

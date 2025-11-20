@@ -771,8 +771,11 @@ function RepriseHC.DeathStats()
     else return "60" end
   end
   for _,d in ipairs(dl) do
-    byClass[d.class] = (byClass[d.class] or 0)+1
-    byRace[d.race] = (byRace[d.race] or 0)+1
+    local classLabel = (RepriseHC and RepriseHC.GetClassLabel and RepriseHC.GetClassLabel(d.class)) or d.class
+    local raceLabel  = (RepriseHC and RepriseHC.GetRaceLabel and RepriseHC.GetRaceLabel(d.race)) or d.race
+
+    byClass[classLabel] = (byClass[classLabel] or 0)+1
+    byRace[raceLabel] = (byRace[raceLabel] or 0)+1
     local z = (d.zone or "Unknown")
     byZone[z] = (byZone[z] or 0)+1
     byBracket[bk(d.level or 0)] = (byBracket[bk(d.level or 0)] or 0)+1

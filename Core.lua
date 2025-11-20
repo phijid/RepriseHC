@@ -74,6 +74,18 @@ RepriseHC.race  = {
   Tauren    = { name="Tauren",    faction="Horde", sort=4 }
 }
 
+function RepriseHC.GetClassLabel(classToken)
+  if not classToken then return "?" end
+  local info = RepriseHC.class and RepriseHC.class[classToken]
+  return (info and info.name) or tostring(classToken)
+end
+
+function RepriseHC.GetRaceLabel(raceToken)
+  if not raceToken then return "?" end
+  local info = RepriseHC.race and RepriseHC.race[raceToken]
+  return (info and info.name) or tostring(raceToken)
+end
+
 RepriseHC.professions = {
   ["Alchemy"]=true,
   ["Blacksmithing"]=true,
