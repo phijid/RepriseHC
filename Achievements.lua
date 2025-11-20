@@ -46,62 +46,9 @@ end
 
 -- ========= Dungeon ordering & bosses =========
 
-local DUNGEON_MINLEVEL = {
-  ["Ragefire Chasm"]= { minLevel=10, faction="Horde" } ,
-  ["Wailing Caverns"]= { minLevel=17 } , 
-  ["The Deadmines"]= { minLevel=17  } , 
-  ["Shadowfang Keep"]= { minLevel=22 } , 
-  ["Blackfathom Deeps"]= { minLevel=24 } , 
-  ["The Stockade"]= { minLevel=24, faction="Alliance" } , 
-  ["Razorfen Kraul"]= { minLevel=29 } , 
-  ["Gnomeregan"]= { minLevel=29 } , 
-  ["Scarlet Monastery: Graveyard"]= { minLevel=30 } , 
-  ["Scarlet Monastery: Library"]= { minLevel=33 } , 
-  ["Scarlet Monastery: Armory"]= { minLevel=36 } , 
-  ["Razorfen Downs"]= { minLevel=37 } , 
-  ["Scarlet Monastery: Cathedral"]= { minLevel=38 } , 
-  ["Uldaman"]= { minLevel=41 } , 
-  ["Zul'Farrak"]= { minLevel=44 } , 
-  ["Maraudon"]= { minLevel=46 } ,  
-  ["The Temple of Atal'Hakkar"]= { minLevel=50 } , 
-  ["Blackrock Depths"]= { minLevel=52 } , 
-  ["Dire Maul: East"]= { minLevel=54 } , 
-  ["Lower Blackrock Spire"]= { minLevel=55 } , 
-  ["Dire Maul: West"]= { minLevel=56 } , 
-  ["Dire Maul: North"]= { minLevel=56 } , 
-  ["Stratholme"]= { minLevel=58 } , 
-  ["Scholomance"]= { minLevel=58 } , 
-  ["Upper Blackrock Spire"]= { minLevel=59 } , 
-}
-
-local FINAL_BOSS = {
-  ["Ragefire Chasm"]               = { npc=11519, boss="Bazzalan" },
-  ["Wailing Caverns"]              = { npc=3654,  boss="Mutanus the Devourer" },
-  ["The Deadmines"]                = { npc=639,   boss="Edwin Vancleef", faction="Alliance" },
-  ["Shadowfang Keep"]              = { npc=4275,  boss="Archmage Arugal" },
-  ["Blackfathom Deeps"]            = { npc=4829,  boss="Aku'mai" },
-  ["The Stockade"]                 = { npc=1716,  boss="Bazil Thredd", faction="Alliance" },
-  ["Razorfen Kraul"]               = { npc=4421,  boss="Charlga Razorflank" },
-  ["Gnomeregan"]                   = { npc=7800,  boss="Mekgineer Thermaplugg" },
-  ["Scarlet Monastery: Graveyard"] = { npc=4543,  boss="Bloodmage Thalnos" },
-  ["Scarlet Monastery: Library"]   = { npc=6487,  boss="Arcanist Doan" },
-  ["Scarlet Monastery: Armory"]    = { npc=3975,  boss="Herod" },
-  ["Razorfen Downs"]               = { npc=7358,  boss="Amnennar the Coldbringer" },
-  ["Scarlet Monastery: Cathedral"] = { npc=3977,  boss="High Inquisitor Whitemane" },
-  ["Uldaman"]                      = { npc=2748,  boss="Archaedas" },
-  ["Zul'Farrak"]                   = { npc=7267,  boss="Chief Ukorz Sandscalp" },
-  ["Maraudon"]                     = { npc=12201, boss="Princess Theradras" },
-  ["The Temple of Atal'Hakkar"]    = { npc=5709,  boss="Shade of Eranikus" },
-  ["Blackrock Depths"]             = { npc=9019,  boss="Emperor Dagran Thaurissan" },
-  ["Dire Maul: East"]              = { npc=11492, boss="Alzzin the Wildshaper" },
-  ["Lower Blackrock Spire"]        = { npc=9568,  boss="Overlord Wyrmthalak" },
-  ["Dire Maul: West"]              = { npc=11486, boss="Prince Tortheldrin" },
-  ["Dire Maul: North"]             = { npc=11501, boss="King Gordok" },
-  ["Stratholme"]                   = { npc=10440, boss="Baron Rivendare" },
-  ["Scholomance"]                  = { npc=1853,  boss="Darkmaster Gandling" },
-  ["Upper Blackrock Spire"]        = { npc=10363, boss="General Drakkisath" },
-}
-local FINAL_BOSS_BY_NPCID = {}; for d,info in pairs(FINAL_BOSS) do FINAL_BOSS_BY_NPCID[info.npc]=d end
+local function GetLevelCapValue()
+  return (RepriseHC.GetLevelCap and RepriseHC.GetLevelCap()) or (RepriseHC.levelCap or 60)
+end
 
 local DUNGEON_METADATA = {
   ["Ragefire Chasm"]= { minLevel=10, faction="Horde", npc=11519, boss="Bazzalan", sort = 1 } ,
@@ -126,42 +73,61 @@ local DUNGEON_METADATA = {
   ["Lower Blackrock Spire"]= { minLevel=55, npc=9568,  boss="Overlord Wyrmthalak", sort = 20 } , 
   ["Dire Maul: West"]= { minLevel=56, npc=11486, boss="Prince Tortheldrin", sort = 21 } , 
   ["Dire Maul: North"]= { minLevel=56, npc=11501, boss="King Gordok", sort = 22 } , 
-  ["Stratholme"]= { minLevel=58, npc=10440, boss="Baron Rivendare", sort = 23 } , 
-  ["Scholomance"]= { minLevel=58, npc=1853,  boss="Darkmaster Gandling", sort = 24 } , 
-  ["Upper Blackrock Spire"]= { minLevel=59, npc=10363, boss="General Drakkisath", sort = 25 } , 
+  ["Stratholme"]= { minLevel=58, npc=10440, boss="Baron Rivendare", sort = 23 } ,
+  ["Scholomance"]= { minLevel=58, npc=1853,  boss="Darkmaster Gandling", sort = 24 } ,
+  ["Upper Blackrock Spire"]= { minLevel=59, npc=10363, boss="General Drakkisath", sort = 25 } ,
 }
+
+local DUNGEON_BY_NPCID = {}
+for name, info in pairs(DUNGEON_METADATA) do
+  DUNGEON_BY_NPCID[info.npc] = name
+end
+
+local function SortedDungeons()
+  local work = {}
+  local levelCap = GetLevelCapValue()
+  for name, info in pairs(DUNGEON_METADATA) do
+    if (not info.faction) or (info.faction == faction) then
+      if info.minLevel <= levelCap then
+        table.insert(work, { name = name, info = info })
+      end
+    end
+  end
+  table.sort(work, function(a, b)
+    local sa, sb = a.info.sort or math.huge, b.info.sort or math.huge
+    if sa == sb then
+      if a.info.minLevel == b.info.minLevel then return a.name < b.name end
+      return a.info.minLevel < b.info.minLevel
+    end
+    return sa < sb
+  end)
+  return work
+end
 
 -- Points per dungeon (15 base, +5 when minlevel increases)
 local DUNGEON_POINTS = {}
 do
-  local work = {}
-  for d,info in pairs(DUNGEON_MINLEVEL) do 
-    if (not info.faction) or (faction == info.faction) then
-      if (info.minLevel <= ((RepriseHC.GetLevelCap and RepriseHC.GetLevelCap()) or (RepriseHC.levelCap or 60))) then
-        table.insert(work,{d=d,l=info.minLevel}) 
-      end
-    end
+  local work = SortedDungeons()
+  local pts, last = 50, nil
+  for _, w in ipairs(work) do
+    if last and w.info.minLevel > last then pts = pts + 10 end
+    last = w.info.minLevel
+    DUNGEON_POINTS[w.name] = pts
   end
-  table.sort(work,function(a,b) if a.l==b.l then return a.d<b.d end return a.l<b.l end)
-  local pts,last=nil,nil; pts=50
-  for _,w in ipairs(work) do if last and w.l>last then pts=pts+10 end last=w.l; DUNGEON_POINTS[w.d]=pts end
 end
 
 -- Expose helpers for UI
 function RepriseHC.Ach_DungeonList()
-  local work = {}
-  for d,info in pairs(DUNGEON_MINLEVEL) do 
-    if (not info.faction) or (faction == info.faction) then
-      if (info.minLevel <= ((RepriseHC.GetLevelCap and RepriseHC.GetLevelCap()) or (RepriseHC.levelCap or 60))) then
-        table.insert(work,{d=d,l=info.minLevel}) 
-      end
-    end
-  end
-  table.sort(work,function(a,b) if a.l==b.l then return a.d<b.d end return a.l<b.l end)
-  local out = {}; for _,w in ipairs(work) do table.insert(out, w.d) end; return out
+  local work = SortedDungeons()
+  local out = {}
+  for _, w in ipairs(work) do table.insert(out, w.name) end
+  return out
 end
 function RepriseHC.Ach_GetDungeonPoints(d) return DUNGEON_POINTS[d] or 0 end
-function RepriseHC.Ach_GetDungeonBossName(d) return (FINAL_BOSS[d] and FINAL_BOSS[d].boss) or d end
+function RepriseHC.Ach_GetDungeonBossName(d)
+  local info = DUNGEON_METADATA[d]
+  return (info and info.boss) or d
+end
 
 -- ========= Earn core =========
 local function EnsureChar()
@@ -520,31 +486,54 @@ end
 
 -- ========= Guild Firsts =========
 function RepriseHC.Ach_GuildFirstOptions(faction)
-  if not (RepriseHC.navigation.guildFirst.enabled) then return end 
-  local classesOrder = { "Druid","Hunter","Mage","Paladin","Priest","Rogue","Shaman","Warlock","Warrior" }
-  local racesOrder   = { "Dwarf","Gnome","Human","Night Elf","Orc","Undead","Tauren","Troll" }
-  local classFactionByName = {}
-  for token,info in pairs(RepriseHC.class) do
-    local disp = (type(info)=="table" and info.name) or info
+  if not (RepriseHC.navigation.guildFirst.enabled) then return end
+  local classInfoByName = {}
+  for _, info in pairs(RepriseHC.class) do
+    local name = (type(info)=="table" and info.name) or info
     local fac  = (type(info)=="table" and info.faction) or nil
-    classFactionByName[disp] = fac
+    local sort = (type(info)=="table" and info.sort) or math.huge
+    local existing = classInfoByName[name]
+    if not existing or (sort < existing.sort) then
+      classInfoByName[name] = { faction = fac, sort = sort }
+    end
   end
-  local raceFactionByName = {}
-  for token,info in pairs(RepriseHC.race) do
-    local disp = (type(info)=="table" and info.name) or info
+
+  local raceInfoByName = {}
+  for _, info in pairs(RepriseHC.race) do
+    local name = (type(info)=="table" and info.name) or info
     local fac  = (type(info)=="table" and info.faction) or nil
-    raceFactionByName[disp] = fac
+    local sort = (type(info)=="table" and info.sort) or math.huge
+    local existing = raceInfoByName[name]
+    if not existing or (sort < existing.sort) then
+      raceInfoByName[name] = { faction = fac, sort = sort }
+    end
   end
+
   local outClasses, outRaces = {}, {}
-  for _,name in ipairs(classesOrder) do
-    local fac = classFactionByName[name]
-    if (not fac) or (fac == faction) then table.insert(outClasses, name) end
+  for name, info in pairs(classInfoByName) do
+    if (not info.faction) or (info.faction == faction) then
+      table.insert(outClasses, { name = name, sort = info.sort })
+    end
   end
-  for _,name in ipairs(racesOrder) do
-    local fac = raceFactionByName[name]
-    if (not fac) or (fac == faction) then table.insert(outRaces, name) end
+  table.sort(outClasses, function(a, b)
+    if a.sort == b.sort then return a.name < b.name end
+    return a.sort < b.sort
+  end)
+
+  for name, info in pairs(raceInfoByName) do
+    if (not info.faction) or (info.faction == faction) then
+      table.insert(outRaces, { name = name, sort = info.sort })
+    end
   end
-  return { classes = outClasses, races = outRaces }
+  table.sort(outRaces, function(a, b)
+    if a.sort == b.sort then return a.name < b.name end
+    return a.sort < b.sort
+  end)
+
+  local classNames, raceNames = {}, {}
+  for _, entry in ipairs(outClasses) do table.insert(classNames, entry.name) end
+  for _, entry in ipairs(outRaces) do table.insert(raceNames, entry.name) end
+  return { classes = classNames, races = raceNames }
 end
 
 local function LockGuildFirst(id, winnerKey, winnerName)
@@ -799,9 +788,9 @@ local function OnCombatLogEvent()
   local idPart = parts[6]
   local npcid = tonumber(idPart)
   if not npcid then return end
-  local dungeonLookup = FINAL_BOSS_BY_NPCID[npcid]
+  local dungeonLookup = DUNGEON_BY_NPCID[npcid]
   if not dungeonLookup then return end
-  local bossName = (FINAL_BOSS[dungeonLookup] and FINAL_BOSS[dungeonLookup].boss) or dungeonLookup
+  local bossName = RepriseHC.Ach_GetDungeonBossName(dungeonLookup)
   local id = "DUNGEON_" .. dungeonLookup
   local pts = (RepriseHC.Ach_GetDungeonPoints and RepriseHC.Ach_GetDungeonPoints(dungeonLookup)) or (DUNGEON_POINTS[dungeonLookup] or 0)
   local nm = "Defeat " .. bossName

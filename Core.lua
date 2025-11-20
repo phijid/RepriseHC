@@ -106,18 +106,6 @@ RepriseHC.navigation = {
   deathlog    = { label="Death Log", enabled=true, sort = 9 },
 }
 
-RepriseHC.navigationOrder = {
-  "leaderboard",
-  "standing",
-  "level",
-  "speedrun",
-  "quest",
-  "prof",
-  "dungeons",
-  "guildFirst",
-  "deathlog",
-}
-
 local Core = CreateFrame("Frame", "RepriseHC_Core")
 Core:RegisterEvent("ADDON_LOADED")
 Core:RegisterEvent("PLAYER_LOGIN")

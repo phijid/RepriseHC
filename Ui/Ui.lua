@@ -174,10 +174,18 @@ local function MakeNavButton(parent, text, id, y)
 end
 do
   local y = -10
-  for _, id in ipairs(RepriseHC.navigationOrder) do
-    local it = RepriseHC.navigation[id]
+  local navOrder = {}
+  for id, info in pairs(RepriseHC.navigation) do
+    table.insert(navOrder, { id = id, sort = info.sort or math.huge })
+  end
+  table.sort(navOrder, function(a, b)
+    if a.sort == b.sort then return a.id < b.id end
+    return a.sort < b.sort
+  end)
+  for _, entry in ipairs(navOrder) do
+    local it = RepriseHC.navigation[entry.id]
     if it.enabled then
-      y = MakeNavButton(Sidebar, it.label, id, y)
+      y = MakeNavButton(Sidebar, it.label, entry.id, y)
     end
   end
 end
