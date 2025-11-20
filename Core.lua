@@ -118,6 +118,7 @@ RepriseHC.navigation = {
   dungeons    = { label="Dungeons", enabled=true, sort = 7 },
   guildFirst  = { label="Guild First", enabled=true, sort = 8 },
   deathlog    = { label="Death Log", enabled=true, sort = 9 },
+  rules       = { label="Rules", enabled=true, sort = 10 },
 }
 
 local Core = CreateFrame("Frame", "RepriseHC_Core")

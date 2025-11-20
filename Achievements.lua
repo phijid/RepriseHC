@@ -560,6 +560,52 @@ local function LockGuildFirst(id, winnerKey, winnerName)
   return false
 end
 
+local function AnnounceGuildFirstAdjustment(targetName, achName, winnerName)
+  local safeTarget = targetName or "A player"
+  local safeAch    = achName or "a guild first achievement"
+  local safeWinner = winnerName or "another player"
+
+  local msg = string.format("%s's points were adjusted: %s was earned earlier by %s.", safeTarget, safeAch, safeWinner)
+  Print(msg)
+  if SendChatMessage then
+    SendChatMessage(msg, "GUILD")
+  end
+end
+
+function RepriseHC.ResolveGuildFirstConflicts(achId)
+  if not (RepriseHC.navigation.guildFirst.enabled) then return end
+  if not achId then return end
+
+  local db = DB()
+  local gf = db and db.guildFirsts and db.guildFirsts[achId]
+  if not gf or not gf.winner then return end
+
+  local version = CurrentDbVersion()
+  local winnerKey = gf.winner
+  local winnerName = gf.winnerName or winnerKey
+
+  for playerKey, char in pairs((db and db.characters) or {}) do
+    if type(char) == "table" then
+      local ach = char.achievements and char.achievements[achId]
+      if ach then
+        local entryVersion = tonumber(ach.dbVersion or ach.dbv) or 0
+        if version == 0 or entryVersion == version then
+          if playerKey ~= winnerKey then
+            local achName = ach.name or achId
+            char.achievements[achId] = nil
+            if RepriseHC and RepriseHC.NormalizeCharacterAchievements then
+              RepriseHC.NormalizeCharacterAchievements(char, version)
+            end
+
+            local displayTarget = char.name or playerKey
+            AnnounceGuildFirstAdjustment(displayTarget, achName, winnerName)
+          end
+        end
+      end
+    end
+  end
+end
+
 function RepriseHC.Ach_TryGuildFirsts(levelOverride)
   if not (RepriseHC.navigation.guildFirst.enabled) then return end
   if not RepriseHC.IsGuildAllowed() then return end
@@ -643,6 +689,31 @@ function RepriseHC.Ach_GetEarners(achId)
     end
   end
   table.sort(out, function(a,b) return a.when < b.when end)
+  return out
+end
+
+-- ========= Character achievements helper for UI =========
+function RepriseHC.Ach_GetCharacterAchievements(playerKey)
+  local out = {}
+  if not playerKey or playerKey == "" then return out end
+
+  local char = (DB().characters or {})[playerKey]
+  if not char or not char.achievements then return out end
+
+  local currentVersion = CurrentDbVersion()
+  for id, entry in pairs(char.achievements or {}) do
+    local entryVersion = tonumber(entry.dbVersion or entry.dbv) or 0
+    if currentVersion == 0 or entryVersion == currentVersion then
+      table.insert(out, {
+        id     = id,
+        name   = entry.name or id,
+        when   = entry.when or 0,
+        points = entry.points or 0,
+      })
+    end
+  end
+
+  table.sort(out, function(a, b) return a.when < b.when end)
   return out
 end
 
