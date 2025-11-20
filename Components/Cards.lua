@@ -189,7 +189,7 @@ local function earnedSet()
 end
 
 local function DebugCategory(catName, list, earnedLookup)
-  if not (RepriseHC and RepriseHC.DebugEnabled and RepriseHC.DebugLog) then return end
+  if not (RepriseHC and RepriseHC.DebugAchievements and RepriseHC.DebugLogAchievements) then return end
 
   local earnedCount = 0
   for _, ach in ipairs(list) do
@@ -222,7 +222,7 @@ local function DebugCategory(catName, list, earnedLookup)
   end
 
   local orderText = (#entries > 0) and table.concat(entries, ", ") or "(no entries)"
-  RepriseHC.DebugLog(string.format("[UI] Rendering %s panel: %d entries (%d earned). Order: %s", catName, #list, earnedCount, orderText))
+  RepriseHC.DebugLogAchievements(string.format("[UI] Rendering %s panel: %d entries (%d earned). Order: %s", catName, #list, earnedCount, orderText))
 end
 
 function RepriseHC.RenderCategory(page, catName)

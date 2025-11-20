@@ -688,8 +688,8 @@ function CaptureDeath()
     })
     inserted = true
 
-    if RepriseHC and RepriseHC.DebugLog then
-      RepriseHC.DebugLog(
+    if RepriseHC and RepriseHC.DebugDeathLog and RepriseHC.DebugLogDeath then
+      RepriseHC.DebugLogDeath(
         string.format(
           "Death captured for %s (lvl %d) in %s%s at %d",
           name or pkey or "Unknown",
@@ -724,8 +724,8 @@ function CaptureDeath()
     if RepriseHC and RepriseHC.SyncBroadcastDeath then
       RepriseHC.SyncBroadcastDeath(level, eclass, erace, zone, sub, name)
       sent = true
-      if RepriseHC and RepriseHC.DebugLog then
-        RepriseHC.DebugLog("Death sync send (", label, ") via SyncBroadcastDeath")
+      if RepriseHC and RepriseHC.DebugDeathLog and RepriseHC.DebugLogDeath then
+        RepriseHC.DebugLogDeath("Death sync send (", label, ") via SyncBroadcastDeath")
       end
     elseif RepriseHC and RepriseHC.Comm_Send then
       local currentVersion = (RepriseHC and RepriseHC.GetDbVersion and RepriseHC.GetDbVersion()) or 0
@@ -734,15 +734,15 @@ function CaptureDeath()
         zone = zone, subzone = sub, when = time(), dbVersion = currentVersion, dbv = currentVersion
       })
       sent = true
-      if RepriseHC and RepriseHC.DebugLog then
-        RepriseHC.DebugLog("Death sync send (", label, ") via Comm_Send; dbv=", currentVersion)
+      if RepriseHC and RepriseHC.DebugDeathLog and RepriseHC.DebugLogDeath then
+        RepriseHC.DebugLogDeath("Death sync send (", label, ") via Comm_Send; dbv=", currentVersion)
       end
     end
     if sent and (not deathSyncRequested) and RepriseHC and RepriseHC.Comm_SyncNow then
       RepriseHC.Comm_SyncNow("death")
       deathSyncRequested = true
-      if RepriseHC and RepriseHC.DebugLog then
-        RepriseHC.DebugLog("Triggered Comm_SyncNow for death log after ", label)
+      if RepriseHC and RepriseHC.DebugDeathLog and RepriseHC.DebugLogDeath then
+        RepriseHC.DebugLogDeath("Triggered Comm_SyncNow for death log after ", label)
       end
     end
   end

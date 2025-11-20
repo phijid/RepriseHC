@@ -2,7 +2,8 @@ RepriseHC = RepriseHC or {}
 RepriseHC.name = "RepriseHC"
 RepriseHC.version = "0.15.0a"
 RepriseHC.allowedGuilds = { ["Reprise"] = true }
-RepriseHC.DebugEnabled = false
+RepriseHC.DebugDeathLog = false
+RepriseHC.DebugAchievements = false
 
 local DEFAULT_DB_VERSION = 1
 RepriseHC.levelCap = { [0] = 16 }
@@ -115,16 +116,31 @@ function RepriseHC.Print(msg)
   DEFAULT_CHAT_FRAME:AddMessage("|cff00c0ffRepriseHC:|r " .. (msg or ""))
 end
 
-function RepriseHC.DebugLog(...)
-  if not RepriseHC.DebugEnabled then return end
+function RepriseHC.DebugLogDeath(...)
+  if not RepriseHC.DebugDeathLog then return end
   print("|cff99ccff[RHC]|r", ...)
 end
 
-function RepriseHC.SetDebugEnabled(enabled)
-  RepriseHC.DebugEnabled = not not enabled
-  local msg = RepriseHC.DebugEnabled and "Debug logging enabled" or "Debug logging disabled"
-  if RepriseHC.DebugEnabled then
-    RepriseHC.DebugLog(msg)
+function RepriseHC.DebugLogAchievements(...)
+  if not RepriseHC.DebugAchievements then return end
+  print("|cff99ccff[RHC]|r", ...)
+end
+
+function RepriseHC.SetDebugDeathLog(enabled)
+  RepriseHC.DebugDeathLog = not not enabled
+  local msg = RepriseHC.DebugDeathLog and "Death log debug logging enabled" or "Death log debug logging disabled"
+  if RepriseHC.DebugDeathLog then
+    RepriseHC.DebugLogDeath(msg)
+  elseif print then
+    print("|cff99ccff[RHC]|r", msg)
+  end
+end
+
+function RepriseHC.SetDebugAchievements(enabled)
+  RepriseHC.DebugAchievements = not not enabled
+  local msg = RepriseHC.DebugAchievements and "Achievement panel debug logging enabled" or "Achievement panel debug logging disabled"
+  if RepriseHC.DebugAchievements then
+    RepriseHC.DebugLogAchievements(msg)
   elseif print then
     print("|cff99ccff[RHC]|r", msg)
   end
