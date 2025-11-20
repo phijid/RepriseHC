@@ -1835,11 +1835,17 @@ local function HandleIncoming(prefix, payload, channel, sender)
 
 
   elseif topic == "DEATH" then
-    if not p.dbv and not p.dbVersion then
-      p.dbv = CurrentDbVersion()
+    local incomingVersion = tonumber(p.dbv or p.dbVersion) or 0
+    if incomingVersion == 0 then
+      incomingVersion = CurrentDbVersion()
+      p.dbv = incomingVersion
+      p.dbVersion = incomingVersion
+      if DebugDeathLog() then
+        debugPrint("DEATH payload missing dbv — defaulting to", incomingVersion)
+      end
     end
 
-    local accept, incomingVersion, _, reason = ShouldAcceptIncremental(p.dbv or p.dbVersion, sender)
+    local accept, _, _, reason = ShouldAcceptIncremental(incomingVersion, sender)
     if not accept then
       if DebugDeathLog() then
         debugPrint(
