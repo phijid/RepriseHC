@@ -1,7 +1,9 @@
 RepriseHC = RepriseHC or {}
 RepriseHC.name = "RepriseHC"
-RepriseHC.version = "0.15.0a"
+RepriseHC.version = "0.16.0a"
 RepriseHC.allowedGuilds = { ["Reprise"] = true }
+RepriseHC.DebugDeathLog = false
+RepriseHC.DebugAchievements = false
 
 local DEFAULT_DB_VERSION = 1
 RepriseHC.levelCap = { [0] = 16 }
@@ -72,6 +74,18 @@ RepriseHC.race  = {
   Tauren    = { name="Tauren",    faction="Horde", sort=4 }
 }
 
+function RepriseHC.GetClassLabel(classToken)
+  if not classToken then return "?" end
+  local info = RepriseHC.class and RepriseHC.class[classToken]
+  return (info and info.name) or tostring(classToken)
+end
+
+function RepriseHC.GetRaceLabel(raceToken)
+  if not raceToken then return "?" end
+  local info = RepriseHC.race and RepriseHC.race[raceToken]
+  return (info and info.name) or tostring(raceToken)
+end
+
 RepriseHC.professions = {
   ["Alchemy"]=true,
   ["Blacksmithing"]=true,
@@ -106,24 +120,42 @@ RepriseHC.navigation = {
   deathlog    = { label="Death Log", enabled=true, sort = 9 },
 }
 
-RepriseHC.navigationOrder = {
-  "leaderboard",
-  "standing",
-  "level",
-  "speedrun",
-  "quest",
-  "prof",
-  "dungeons",
-  "guildFirst",
-  "deathlog",
-}
-
 local Core = CreateFrame("Frame", "RepriseHC_Core")
 Core:RegisterEvent("ADDON_LOADED")
 Core:RegisterEvent("PLAYER_LOGIN")
 
 function RepriseHC.Print(msg)
   DEFAULT_CHAT_FRAME:AddMessage("|cff00c0ffRepriseHC:|r " .. (msg or ""))
+end
+
+function RepriseHC.DebugLogDeath(...)
+  if not RepriseHC.DebugDeathLog then return end
+  print("|cff99ccff[RHC]|r", ...)
+end
+
+function RepriseHC.DebugLogAchievements(...)
+  if not RepriseHC.DebugAchievements then return end
+  print("|cff99ccff[RHC]|r", ...)
+end
+
+function RepriseHC.SetDebugDeathLog(enabled)
+  RepriseHC.DebugDeathLog = not not enabled
+  local msg = RepriseHC.DebugDeathLog and "Death log debug logging enabled" or "Death log debug logging disabled"
+  if RepriseHC.DebugDeathLog then
+    RepriseHC.DebugLogDeath(msg)
+  elseif print then
+    print("|cff99ccff[RHC]|r", msg)
+  end
+end
+
+function RepriseHC.SetDebugAchievements(enabled)
+  RepriseHC.DebugAchievements = not not enabled
+  local msg = RepriseHC.DebugAchievements and "Achievement panel debug logging enabled" or "Achievement panel debug logging disabled"
+  if RepriseHC.DebugAchievements then
+    RepriseHC.DebugLogAchievements(msg)
+  elseif print then
+    print("|cff99ccff[RHC]|r", msg)
+  end
 end
 
 local RESET_SALT = "RepriseHC_ResetSalt_v1"
