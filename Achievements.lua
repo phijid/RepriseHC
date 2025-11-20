@@ -646,6 +646,31 @@ function RepriseHC.Ach_GetEarners(achId)
   return out
 end
 
+-- ========= Character achievements helper for UI =========
+function RepriseHC.Ach_GetCharacterAchievements(playerKey)
+  local out = {}
+  if not playerKey or playerKey == "" then return out end
+
+  local char = (DB().characters or {})[playerKey]
+  if not char or not char.achievements then return out end
+
+  local currentVersion = CurrentDbVersion()
+  for id, entry in pairs(char.achievements or {}) do
+    local entryVersion = tonumber(entry.dbVersion or entry.dbv) or 0
+    if currentVersion == 0 or entryVersion == currentVersion then
+      table.insert(out, {
+        id     = id,
+        name   = entry.name or id,
+        when   = entry.when or 0,
+        points = entry.points or 0,
+      })
+    end
+  end
+
+  table.sort(out, function(a, b) return a.when < b.when end)
+  return out
+end
+
 -- ========= Death Log =========
 function CaptureDeath()
   local level = UnitLevel("player") or 0

@@ -271,6 +271,8 @@ function UI:Refresh()
   local height = 100
   if id == "leaderboard" then
     height = RepriseHC.RenderLeaderboard(page)
+  elseif id == "leaderboardDetail" then
+    height = RepriseHC.RenderLeaderboardDetail(page)
   elseif id == "standing" then
     height = RepriseHC.RenderStandings(page)
   elseif id == "level" then
