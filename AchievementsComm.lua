@@ -1835,7 +1835,11 @@ local function HandleIncoming(prefix, payload, channel, sender)
 
 
   elseif topic == "DEATH" then
-    local accept, incomingVersion, _, reason = ShouldAcceptIncremental(p.dbv, sender)
+    if not p.dbv and not p.dbVersion then
+      p.dbv = CurrentDbVersion()
+    end
+
+    local accept, incomingVersion, _, reason = ShouldAcceptIncremental(p.dbv or p.dbVersion, sender)
     if not accept then
       if DebugDeathLog() then
         debugPrint(
