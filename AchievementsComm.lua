@@ -3,7 +3,6 @@
 -- Prefix: RepriseHC_ACH
 
 local PREFIX = "RepriseHC_ACH"
-local RHC_DEBUG = false
 local lastOwnDeathAnnounceAt = 0
 local lastResetStamp
 local haveSnapshot = false
@@ -22,8 +21,17 @@ local MaybeSendTargetedSnapshot
 local AdoptIncomingVersion
 local DIRECT_ADDON_MAX = 240
 
+local function DebugEnabled()
+  return RepriseHC and RepriseHC.DebugEnabled
+end
+
 local function debugPrint(...)
-  if RHC_DEBUG and print then print("|cff99ccff[RHC]|r", ...) end
+  if not DebugEnabled() then return end
+  if RepriseHC and RepriseHC.DebugLog then
+    RepriseHC.DebugLog(...)
+  elseif print then
+    print("|cff99ccff[RHC]|r", ...)
+  end
 end
 
 if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
@@ -216,6 +224,12 @@ local function QueuePendingIncremental(version, message, sender, sid, channel, s
   })
 
   local topic = message and message.topic
+  if DebugEnabled() and type(topic) == "string" and topic:upper() == "DEATH" then
+    debugPrint(
+      "Queueing DEATH payload until version", target,
+      "from", sender or "?", "seq=", seq or "?", "channel=", channel or "?", "ts=", ts or "?"
+    )
+  end
   local urgent = (type(topic) == "string" and topic:upper() == "DEATH")
   EnsurePendingIncrementalCheck(target, topic, urgent)
 end
@@ -396,8 +410,8 @@ local function ShouldAcceptIncremental(dbv, sender)
   local incoming = tonumber(dbv) or 0
   local localVersion = CurrentDbVersion()
   if incoming == 0 then
-    if localVersion ~= 0 and RHC_DEBUG then
-      print("|cffff6666[RHC]|r dropping payload without db version (have", localVersion, ")")
+    if localVersion ~= 0 and DebugEnabled() then
+      debugPrint("dropping payload without db version (have", localVersion, ")")
     end
     if localVersion ~= 0 and sender and SendSnapshotPayload then
       SendSnapshotPayload({ kind="SNAP", data=BuildSnapshot() }, sender)
@@ -409,8 +423,8 @@ local function ShouldAcceptIncremental(dbv, sender)
     return true, incoming, CurrentDbVersion()
   end
   if incoming < localVersion then
-    if RHC_DEBUG then
-      print("|cffff6666[RHC]|r dropping older payload", incoming, "<", localVersion)
+    if DebugEnabled() then
+      debugPrint("dropping older payload", incoming, "<", localVersion)
     end
     if sender and SendSnapshotPayload then
       SendSnapshotPayload({ kind="SNAP", data=BuildSnapshot() }, sender)
@@ -418,8 +432,8 @@ local function ShouldAcceptIncremental(dbv, sender)
     return false, incoming, localVersion, "past"
   end
   if incoming > localVersion then
-    if RHC_DEBUG then
-      print("|cffff8800[RHC]|r newer payload detected", incoming, ">", localVersion)
+    if DebugEnabled() then
+      debugPrint("newer payload detected", incoming, ">", localVersion)
     end
     haveSnapshot = false
 
@@ -456,8 +470,8 @@ end
 local function TryDecodeAce(payload)
   local ok, t = AceSer:Deserialize(payload)
   if ok and type(t) == "table" then return t end
-  if RHC_DEBUG then
-    print("|cffff6666[RHC]|r AceSer deserialize failed; raw=", tostring(payload):sub(1, 40), "...")
+  if DebugEnabled() then
+    debugPrint("AceSer deserialize failed; raw=", tostring(payload):sub(1, 40), "...")
   end
 end
 
@@ -1115,20 +1129,20 @@ local function MergeSnapshot(p)
 
   if incomingVersion == 0 then
     if localVersion ~= 0 then
-      if RHC_DEBUG then print("|cffff6666[RHC]|r snapshot rejected (missing version)") end
+      if DebugEnabled() then debugPrint("snapshot rejected (missing version)") end
       return
     end
   elseif localVersion == 0 then
     EnsureDbVersion(incomingVersion)
     localVersion = incomingVersion
   elseif incomingVersion < localVersion then
-    if RHC_DEBUG then
-      print("|cffff6666[RHC]|r snapshot rejected (older version)", incomingVersion, "<", localVersion)
+    if DebugEnabled() then
+      debugPrint("snapshot rejected (older version)", incomingVersion, "<", localVersion)
     end
     return
   elseif incomingVersion > localVersion then
-    if RHC_DEBUG then
-      print("|cffff8800[RHC]|r snapshot adopting newer version", incomingVersion)
+    if DebugEnabled() then
+      debugPrint("snapshot adopting newer version", incomingVersion)
     end
     if RepriseHC and RepriseHC._HardResetDB then
       RepriseHC._HardResetDB("|cffff6060Global reset detected from sync.|r", incomingVersion)
@@ -1667,7 +1681,7 @@ local function ApplyDeathPayload(p, sender, sid)
   end
 
   if seen then
-    if RHC_DEBUG then print("|cff99ccff[RHC]|r DEATH already logged for", p.playerKey, "— skipping") end
+    if DebugEnabled() then debugPrint("DEATH already logged for", p.playerKey, "— skipping") end
     return
   end
 
@@ -1679,7 +1693,7 @@ local function ApplyDeathPayload(p, sender, sid)
     zone=p.zone, subzone=p.subzone, when=eventWhen, dbVersion=entryVersion
   })
 
-  if RHC_DEBUG then print("|cff99ccff[RHC]|r DEATH inserted for", p.playerKey or p.name or "?") end
+  if DebugEnabled() then debugPrint("DEATH inserted for", p.playerKey or p.name or "?") end
 
   local announceToGuild = false
   if IsInGuild() and RepriseHC.GetShowToGuild and RepriseHC.GetShowToGuild() then
@@ -1777,20 +1791,20 @@ end
 
 local function HandleIncoming(prefix, payload, channel, sender)
 
-  if RHC_DEBUG then
-    print("|cff99ccff[RHC RX]|r", "prefix=", prefix, "dist=", channel, "from=", sender, "len=", #tostring(payload or ""))
+  if DebugEnabled() then
+    debugPrint("RX", "prefix=", prefix, "dist=", channel, "from=", sender, "len=", #tostring(payload or ""))
   end
 
   if prefix ~= PREFIX then return end
   local t = TryDecodeAce(payload); if not t then t = TryDecodeLegacy(payload) end
   if not t then
-    if RHC_DEBUG then
-      print("|cffff6666[RHC]|r decode failed; dropping. prefix=", prefix, "from=", sender)
+    if DebugEnabled() then
+      debugPrint("decode failed; dropping. prefix=", prefix, "from=", sender)
     end
     return
   end
   if t.v ~= 1 then
-    if RHC_DEBUG then print("|cffff6666[RHC]|r bad version", tostring(t.v)) end
+    if DebugEnabled() then debugPrint("bad version", tostring(t.v)) end
     return
   end
 
@@ -1813,10 +1827,21 @@ local function HandleIncoming(prefix, payload, channel, sender)
   elseif topic == "DEATH" then
     local accept, incomingVersion, _, reason = ShouldAcceptIncremental(p.dbv, sender)
     if not accept then
+      if DebugEnabled() then
+        debugPrint(
+          "DEATH payload delayed:", reason or "?", "incoming=", incomingVersion or "?",
+          "local=", CurrentDbVersion()
+        )
+      end
       if reason == "future" then
         QueuePendingIncremental(incomingVersion, { topic = "DEATH", payload = DeepCopy(p) }, sender, sid, channel, q, t.ts)
       end
       return
+    end
+    if DebugEnabled() then
+      debugPrint(
+        "DEATH payload accepted from", sender or sid or "?", "when=", p.when or p.time or "?", "channel=", channel or "?"
+      )
     end
     ApplyDeathPayload(p, sender, sid)
 
@@ -1836,8 +1861,8 @@ local function HandleIncoming(prefix, payload, channel, sender)
     local sig = tonumber(p.sig)
     local expected = RepriseHC._ResetSignature
     if not sig or not expected or sig ~= expected then
-      if RHC_DEBUG then
-        print("|cffff6666[RHC]|r reset ignored (bad signature)")
+      if DebugEnabled() then
+        debugPrint("reset ignored (bad signature)")
       end
       return
     end
@@ -1852,13 +1877,13 @@ local function HandleIncoming(prefix, payload, channel, sender)
       else
         RepriseHC._LastResetStamp = RepriseHC._LastResetStamp or ((GetServerTime and GetServerTime()) or time())
       end
-      if RHC_DEBUG then print("|cff99ccff[RHC]|r reset ignored (version already adopted)") end
+      if DebugEnabled() then debugPrint("reset ignored (version already adopted)") end
       return
     end
 
     if stamp ~= 0 then
       if RepriseHC._LastResetStamp and stamp == RepriseHC._LastResetStamp then
-        if RHC_DEBUG then print("|cff99ccff[RHC]|r reset echo ignored") end
+        if DebugEnabled() then debugPrint("reset echo ignored") end
         return
       end
       if lastResetStamp and stamp == lastResetStamp then
@@ -1867,7 +1892,7 @@ local function HandleIncoming(prefix, payload, channel, sender)
       lastResetStamp = stamp
     else
       if dbVersion > 0 and RepriseHC._LastResetDbVersion and RepriseHC._LastResetDbVersion == dbVersion then
-        if RHC_DEBUG then print("|cff99ccff[RHC]|r duplicate reset version ignored") end
+        if DebugEnabled() then debugPrint("duplicate reset version ignored") end
         return
       end
       lastResetStamp = time()
@@ -1929,7 +1954,7 @@ local function HandleIncoming(prefix, payload, channel, sender)
   elseif topic == "SNAP" and p and p.data then
     MergeSnapshot(p.data)
     haveSnapshot = true
-    if RepriseHC.Print and RHC_DEBUG then RepriseHC.Print("Synchronized snapshot.") end
+    if RepriseHC.Print and DebugEnabled() then RepriseHC.Print("Synchronized snapshot.") end
     if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
   end
 end
@@ -1946,6 +1971,9 @@ ProcessPendingIncrementalEntry = function(entry)
   if topic == "ACH" then
     ApplyAchievementPayload(clone, entry.sender)
   elseif topic == "DEATH" then
+    if DebugEnabled() then
+      debugPrint("Processing queued DEATH payload from", entry.sender or "?", "seq=", entry.seq or "?", "ts=", entry.ts or "?")
+    end
     ApplyDeathPayload(clone, entry.sender, entry.sid)
   elseif topic == "GROUP" then
     ApplyGroupPayload(clone, entry.sender)
@@ -1974,6 +2002,13 @@ function RepriseHC.Comm_Send(topic, payloadTable)
   local usedGroup = false
   if not usedGuild then
     usedGroup = SendViaGroup(wire)
+  end
+
+  if topic == "DEATH" and DebugEnabled() then
+    debugPrint(
+      "Comm_Send(DEATH): guild=", usedGuild, "group=", usedGroup,
+      "snapshotVersion=", CurrentDbVersion()
+    )
   end
 
   if topic ~= "DEATH" and not usedGuild and not usedGroup then
@@ -2009,10 +2044,19 @@ function RepriseHC.Comm_Send(topic, payloadTable)
 
   if topic == "DEATH" then
     -- Try the direct 1:1 path first (when only 2 online)
+    if DebugEnabled() then
+      debugPrint("Comm_Send(DEATH): trying direct send to online peer")
+    end
     local didDirect = SendDirectToOtherOnline(wire)
+    if DebugEnabled() then
+      debugPrint("Comm_Send(DEATH): direct path", didDirect and "hit" or "skipped", "— whisper fan-out next")
+    end
 
     -- Also do the regular fan-out (covers >2 online)
     SendWhisperFallback(wire, 12)
+    if DebugEnabled() then
+      debugPrint("Comm_Send(DEATH): whisper fan-out sent to 12 peers")
+    end
 
     -- Late resend for good measure
     local late = wire
@@ -2020,6 +2064,9 @@ function RepriseHC.Comm_Send(topic, payloadTable)
       local ok = SendViaGuild(late)
       if not ok then ok = SendViaGroup(late) end
       SendWhisperFallback(late, 12)
+      if DebugEnabled() then
+        debugPrint("Comm_Send(DEATH): late resend executed — guild=", ok, "+ whispers")
+      end
     end)
 
     -- Short-delay snapshots heal any missed packets once the channel settles
