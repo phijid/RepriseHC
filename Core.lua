@@ -6,10 +6,10 @@ RepriseHC.DebugDeathLog = false
 RepriseHC.DebugAchievements = false
 
 local DEFAULT_DB_VERSION = 1
-RepriseHC.levelCap = { [0] = 16 }
+RepriseHC.levelCap = { [0] = 2 }
 RepriseHC.levelCapIndex = 0
 RepriseHC.maxLevelPerCap = 60
-RepriseHC.levels = {10,20,30,40,50,60}
+RepriseHC.levels = {2,10,20,30,40,50,60}
 local function EnsureLevelMilestones()
   local function CurrentCap()
     local idx = tonumber(RepriseHC.levelCapIndex) or 0
@@ -41,6 +41,7 @@ RepriseHC.AchievementTesting = false
 RepriseHC.skull = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_8:12:12:0:0|t"
 
 RepriseHC.speedrunThresholds = {
+  [2] = 2,
   [10] = 2,
   [20] = 12,
   [30] = 27,

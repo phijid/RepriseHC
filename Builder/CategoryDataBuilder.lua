@@ -112,7 +112,7 @@ function RepriseHC.BuildCatalog()
         local id_all = "FIRST_" .. capVal
         table.insert(cat["Guild First"], {
           id       = id_all,
-          name     = "Guild First " .. capVal,
+          name     = "Guild First Level" .. capVal,
           points   = GF_POINTS.ALL,
           gfType   = "ALL",
           gfKey    = "0",
@@ -135,7 +135,7 @@ function RepriseHC.BuildCatalog()
             local id = "FIRST_" .. capVal .. "_CLASS_" .. clsKey
             table.insert(cat["Guild First"], {
               id       = id,
-              name     = "Guild First " .. capVal .. " " .. cls,
+              name     = "Guild First Level" .. capVal .. " " .. cls,
               points   = GF_POINTS.CLASS,
               gfType   = "CLASS",
               gfKey    = cls,
@@ -160,7 +160,7 @@ function RepriseHC.BuildCatalog()
             local id = "FIRST_" .. capVal .. "_RACE_" .. raceKey
             table.insert(cat["Guild First"], {
               id       = id,
-              name     = "Guild First " .. capVal .. " " .. race,
+              name     = "Guild First Level" .. capVal .. " " .. race,
               points   = GF_POINTS.RACE,
               gfType   = "RACE",
               gfKey    = race,

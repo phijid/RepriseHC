@@ -385,11 +385,11 @@ end
 
 -- ========= Quest Milestones =========
 local QUEST_MILESTONES = {
-  -- { questId = 783, levelCap = 2,  title = "A Threat Within", faction = "Alliance" },
-  -- { questId = 5261, levelCap = 2,  title = "Eagan Peltskinner", faction = "Alliance" },
-  -- { questId = 363, levelCap = 10,  title = "Rude Awakening", faction = "Horde" },
-  -- { questId = 4641, levelCap = 10,  title = "Your Place In The World", faction = "Horde" },
-  -- { questId = 753, levelCap = 10,  title = "A Humble Task", faction = "Horde" },
+  { questId = 783, levelCap = 2,  title = "A Threat Within", faction = "Alliance" },
+  { questId = 5261, levelCap = 2,  title = "Eagan Peltskinner", faction = "Alliance" },
+  { questId = 363, levelCap = 10,  title = "Rude Awakening", faction = "Horde" },
+  { questId = 4641, levelCap = 10,  title = "Your Place In The World", faction = "Horde" },
+  { questId = 753, levelCap = 10,  title = "A Humble Task", faction = "Horde" },
   { questId = 2561, levelCap = 9,  title = "Druid of the Claw", faction = "Alliance" },  
   { questId = 314,  levelCap = 10, title = "Protecting the Herd", faction = "Alliance" },
   { questId = 176,  levelCap = 11, title = "Wanted: Hogger", faction = "Alliance" },
@@ -576,13 +576,13 @@ function RepriseHC.Ach_TryGuildFirsts(levelOverride)
 
   -- overall
   if LockGuildFirst("FIRST_" .. cap, pkey, pname) then
-    if EarnAchievement("FIRST_" .. cap, "Guild First " .. cap, 100) then
-      local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First " .. cap, 100)
+    if EarnAchievement("FIRST_" .. cap, "Guild First Level " .. cap, 100) then
+      local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First Level " .. cap, 100)
       Print(msg)
       if (RepriseHC.GetShowToGuild()) then
         SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
       end
-      SyncBroadcastAward("FIRST_" .. cap, "Guild First " .. cap, 100)
+      SyncBroadcastAward("FIRST_" .. cap, "Guild First Level " .. cap, 100)
     end
   end
 
@@ -593,9 +593,9 @@ function RepriseHC.Ach_TryGuildFirsts(levelOverride)
   local idc       = "FIRST_" .. cap .. "_CLASS_" .. classKey
 
   if LockGuildFirst(idc, pkey, pname) then
-    local title = "Guild First " .. cap .. " " .. (classDisp or "Class")
+    local title = "Guild First Level " .. cap .. " " .. (classDisp or "Class")
     if EarnAchievement(idc, title, 75) then
-      local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First " .. cap .. " " .. (classDisp or "Class"), 75)
+      local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First Level " .. cap .. " " .. (classDisp or "Class"), 75)
       Print(msg)
       if (RepriseHC.GetShowToGuild()) then
         SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
@@ -611,9 +611,9 @@ function RepriseHC.Ach_TryGuildFirsts(levelOverride)
   local idr      = "FIRST_" .. cap .. "_RACE_" .. raceKey
 
   if LockGuildFirst(idr, pkey, pname) then
-    local title = "Guild First " .. cap .. " " .. (raceDisp or "Race")
+    local title = "Guild First Level " .. cap .. " " .. (raceDisp or "Race")
     if EarnAchievement(idr, title, 75) then
-      local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First " .. cap .. " " .. (raceDisp or "Race"), 75)
+      local msg = ("Achievement earned: |cff40ff40%s|r (+%d)"):format("Guild First Level " .. cap .. " " .. (raceDisp or "Race"), 75)
       Print(msg)
       if (RepriseHC.GetShowToGuild()) then
         SendChatMessage(msg:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""), "GUILD")
