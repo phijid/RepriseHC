@@ -12,6 +12,7 @@ local lastPostChangeSnapshotAt = 0
 local lastSnapshotRequestAt = 0
 local lastGuildSyncAt = 0
 local PERIODIC_SYNC_INTERVAL = 60
+local lastDecodeFailureAt = 0
 local targetedSnapshotSentAt = {}
 local knownOnlineGuildmates = {}
 local TARGETED_SNAPSHOT_MIN_INTERVAL = 30
@@ -1668,6 +1669,10 @@ local function ApplyAchievementPayload(p, sender)
       end
     end
     if gf then gf.dbv = nil end
+
+    if RepriseHC and RepriseHC.ResolveGuildFirstConflicts then
+      RepriseHC.ResolveGuildFirstConflicts(p.id)
+    end
   end
 
   if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
@@ -1811,6 +1816,13 @@ local function HandleIncoming(prefix, payload, channel, sender)
     if DebugDeathLog() then
       debugPrint("decode failed; dropping. prefix=", prefix, "from=", sender)
     end
+    if RequestFullSnapshot then
+      local now = GetTime and GetTime() or time()
+      if now - (lastDecodeFailureAt or 0) > 4 then
+        lastDecodeFailureAt = now
+        RequestFullSnapshot("decode-failed", true)
+      end
+    end
     return
   end
   if t.v ~= 1 then
@@ -1835,19 +1847,45 @@ local function HandleIncoming(prefix, payload, channel, sender)
 
 
   elseif topic == "DEATH" then
-    local accept, incomingVersion, _, reason = ShouldAcceptIncremental(p.dbv, sender)
-    if not accept then
-      if DebugDeathLog() then
-        debugPrint(
-          "DEATH payload delayed:", reason or "?", "incoming=", incomingVersion or "?",
-          "local=", CurrentDbVersion()
-        )
+    if DebugDeathLog() then
+      local age = nil
+      local when = tonumber(p.when or p.time)
+      if when then
+        age = (time() - math.floor(when))
+        if age < 0 then age = 0 end
       end
-      if reason == "future" then
-        QueuePendingIncremental(incomingVersion, { topic = "DEATH", payload = DeepCopy(p) }, sender, sid, channel, q, t.ts)
-      end
-      return
+      debugPrint("DEATH payload rx from", sender or sid or "?", "age=", age, "dbv=", p.dbv or p.dbVersion or "?")
     end
+
+    local incomingVersion = tonumber(p.dbv or p.dbVersion) or 0
+    if incomingVersion == 0 then
+      incomingVersion = CurrentDbVersion()
+      p.dbv = incomingVersion
+      p.dbVersion = incomingVersion
+      if DebugDeathLog() then
+        debugPrint("DEATH payload missing dbv — defaulting to", incomingVersion)
+      end
+    end
+
+    local localVersion = CurrentDbVersion()
+    if incomingVersion > localVersion then
+      EnsureDbVersion(incomingVersion)
+      localVersion = incomingVersion
+      if DebugDeathLog() then
+        debugPrint("DEATH payload advanced local db version to", incomingVersion)
+      end
+    end
+
+    if incomingVersion < localVersion then
+      incomingVersion = localVersion
+      p.dbv = localVersion
+      p.dbVersion = localVersion
+      if DebugDeathLog() then
+        debugPrint("DEATH payload normalized to current db version", localVersion)
+      end
+    end
+
+    -- Always apply deaths immediately after normalizing versions; do not queue.
     if DebugDeathLog() then
       debugPrint(
         "DEATH payload accepted from", sender or sid or "?", "when=", p.when or p.time or "?", "channel=", channel or "?"
@@ -2053,6 +2091,7 @@ function RepriseHC.Comm_Send(topic, payloadTable)
   end
 
   if topic == "DEATH" then
+    local delivered = usedGuild or usedGroup
     -- Try the direct 1:1 path first (when only 2 online)
     if DebugDeathLog() then
       debugPrint("Comm_Send(DEATH): trying direct send to online peer")
@@ -2062,10 +2101,27 @@ function RepriseHC.Comm_Send(topic, payloadTable)
       debugPrint("Comm_Send(DEATH): direct path", didDirect and "hit" or "skipped", "— whisper fan-out next")
     end
 
+    delivered = delivered or didDirect
+
     -- Also do the regular fan-out (covers >2 online)
-    SendWhisperFallback(wire, 12)
+    local fanoutSent = SendWhisperFallback(wire, 12)
     if DebugDeathLog() then
       debugPrint("Comm_Send(DEATH): whisper fan-out sent to 12 peers")
+    end
+
+    delivered = delivered or fanoutSent
+
+    if not delivered and C_Timer and C_Timer.After then
+      C_Timer.After(2, function()
+        local retriedGuild = SendViaGuild(wire)
+        local retriedGroup = not retriedGuild and SendViaGroup(wire)
+        local retriedFanout = SendWhisperFallback(wire, 12)
+        if DebugDeathLog() then
+          debugPrint(
+            "Comm_Send(DEATH): retry (2s) guild=", retriedGuild, "group=", retriedGroup, "fanout=", retriedFanout
+          )
+        end
+      end)
     end
 
     -- Late resend for good measure
