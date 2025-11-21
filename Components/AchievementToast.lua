@@ -6,6 +6,10 @@ local FitFontString
 
 local TITLE_MIN_SIZE = 10
 local TITLE_BASE_SIZE = 13
+local SOUND_PATHS = {
+  "Sound\\Interface\\UI_Achievement_Toast_01.wav",
+  "Sound\\Interface\\UI_Achievement_Toast.wav",
+}
 
 local function GetFactionIcon()
   local faction = UnitFactionGroup("player")
@@ -19,12 +23,20 @@ local function GetFactionIcon()
 end
 
 local function PlayAchievementSound()
-  if SOUNDKIT and SOUNDKIT.UI_ACHIEVEMENT_AWARDED and PlaySound then
+  if PlaySound and SOUNDKIT and SOUNDKIT.UI_ACHIEVEMENT_AWARDED then
     PlaySound(SOUNDKIT.UI_ACHIEVEMENT_AWARDED, "Master")
-  elseif PlaySound then
+    return
+  end
+
+  if PlaySoundFile then
+    for _, path in ipairs(SOUND_PATHS) do
+      PlaySoundFile(path, "Master")
+      return
+    end
+  end
+
+  if PlaySound then
     PlaySound(12891, "Master")
-  elseif PlaySoundFile then
-    PlaySoundFile("Sound\\Interface\\UI_Achievement_Toast.wav", "Master")
   end
 end
 
@@ -34,7 +46,7 @@ local function GetToastFrame()
   end
 
   local frame = CreateFrame("Frame", "RepriseHC_AchievementToast", UIParent, "BackdropTemplate")
-  frame:SetSize(368, 98)
+  frame:SetSize(420, 60)
   frame:SetPoint("TOP", UIParent, "TOP", 0, -180)
   frame:SetFrameStrata("FULLSCREEN_DIALOG")
   frame:SetClampedToScreen(true)
@@ -65,21 +77,35 @@ local function GetToastFrame()
   frame.iconBG = frame:CreateTexture(nil, "ARTWORK")
   frame.iconBG:SetTexture("Interface\\ACHIEVEMENTFRAME\\UI-Achievement-IconFrame")
   frame.iconBG:SetTexCoord(0, 0.5625, 0, 0.5625)
-  frame.iconBG:SetSize(54, 54)
+  frame.iconBG:SetSize(60, 60)
   frame.iconBG:SetPoint("RIGHT", frame, "LEFT", -8, 0)
 
   frame.icon = frame:CreateTexture(nil, "ARTWORK")
   frame.icon:SetTexture(GetFactionIcon())
   frame.icon:SetPoint("CENTER", frame.iconBG, "CENTER", 0, 0)
-  frame.icon:SetSize(40, 40)
+  frame.icon:SetSize(44, 44)
 
   frame.content = CreateFrame("Frame", nil, frame)
-  frame.content:SetPoint("TOPLEFT", frame, "TOPLEFT", 22, -12)
-  frame.content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, 12)
+  frame.content:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -8)
+  frame.content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 8)
+
+  frame.points = frame.content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  frame.points:SetPoint("BOTTOMLEFT", frame.content, "BOTTOMLEFT", 0, 0)
+  frame.points:SetPoint("BOTTOMRIGHT", frame.content, "BOTTOMRIGHT", 0, 0)
+  frame.points:SetJustifyH("CENTER")
+  frame.points:SetTextColor(0.9, 0.95, 1)
+  do
+    local font, _, flags = frame.points:GetFont()
+    if font then
+      frame.points:SetFont(font, 12, flags)
+    end
+  end
 
   frame.title = frame.content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   frame.title:SetPoint("TOPLEFT", frame.content, "TOPLEFT", 0, 0)
   frame.title:SetPoint("TOPRIGHT", frame.content, "TOPRIGHT", 0, 0)
+  frame.title:SetPoint("BOTTOMLEFT", frame.points, "TOPLEFT", 0, 2)
+  frame.title:SetPoint("BOTTOMRIGHT", frame.points, "TOPRIGHT", 0, 2)
   frame.title:SetJustifyH("CENTER")
   frame.title:SetJustifyV("TOP")
   frame.title:SetWordWrap(true)
@@ -92,18 +118,6 @@ local function GetToastFrame()
     end
   end
 
-  frame.points = frame.content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  frame.points:SetPoint("BOTTOMLEFT", frame.content, "BOTTOMLEFT", 0, 0)
-  frame.points:SetPoint("BOTTOMRIGHT", frame.content, "BOTTOMRIGHT", 0, 0)
-  frame.points:SetJustifyH("CENTER")
-  frame.points:SetTextColor(0.9, 0.95, 1)
-  do
-    local font, _, flags = frame.points:GetFont()
-    if font then
-      frame.points:SetFont(font, 13, flags)
-    end
-  end
-
   frame._duration = ALERT_DURATION
   frame._fade = FADE_DURATION
 
@@ -111,7 +125,7 @@ local function GetToastFrame()
     local maxWidth = self.content:GetWidth()
     local text = self.title:GetText() or ""
     local pointsHeight = self.points:GetStringHeight() or self.points:GetLineHeight() or 0
-    local availableHeight = math.max(28, self.content:GetHeight() - pointsHeight - 6)
+    local availableHeight = math.max(18, self.content:GetHeight() - pointsHeight - 4)
     self.title:SetMaxLines(3)
     self.title:SetHeight(availableHeight)
     FitFontString(self.title, text, maxWidth, 3, 3, availableHeight)
