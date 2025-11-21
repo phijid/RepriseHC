@@ -34,7 +34,7 @@ local function GetToastFrame()
   end
 
   local frame = CreateFrame("Frame", "RepriseHC_AchievementToast", UIParent, "BackdropTemplate")
-  frame:SetSize(356, 82)
+  frame:SetSize(356, 92)
   frame:SetPoint("TOP", UIParent, "TOP", 0, -180)
   frame:SetFrameStrata("FULLSCREEN_DIALOG")
   frame:SetClampedToScreen(true)
@@ -92,7 +92,8 @@ local function GetToastFrame()
   function frame:EnsureTitleFits()
     local maxWidth = self:GetWidth() - 36
     local text = self.title:GetText() or ""
-    FitFontString(self.title, text, maxWidth, 2)
+    self.title:SetMaxLines(2)
+    FitFontString(self.title, text, maxWidth, 2, 3)
   end
 
   frame:SetScript("OnHide", function(self)
@@ -157,7 +158,7 @@ local function GetToastFrame()
   return frame
 end
 
-function FitFontString(fs, text, maxWidth, maxLines)
+function FitFontString(fs, text, maxWidth, maxLines, fallbackLines)
   if not fs or not text or not maxWidth then return end
 
   local font, _, flags = fs:GetFont()
@@ -169,6 +170,7 @@ function FitFontString(fs, text, maxWidth, maxLines)
   fs:SetText(text)
 
   local limitLines = maxLines or 2
+  fs:SetMaxLines(limitLines)
   local function exceeds()
     local overWidth = fs:GetStringWidth() > maxWidth
     local lineHeight = fs:GetLineHeight() or size
@@ -180,6 +182,20 @@ function FitFontString(fs, text, maxWidth, maxLines)
     size = size - 1
     fs:SetFont(font, size, flags)
     fs:SetText(text)
+  end
+
+  if exceeds() and fallbackLines and fallbackLines > limitLines then
+    limitLines = fallbackLines
+    fs:SetMaxLines(limitLines)
+    size = TITLE_BASE_SIZE
+    fs:SetFont(font, size, flags)
+    fs:SetText(text)
+
+    while size > TITLE_MIN_SIZE and exceeds() do
+      size = size - 1
+      fs:SetFont(font, size, flags)
+      fs:SetText(text)
+    end
   end
 end
 
