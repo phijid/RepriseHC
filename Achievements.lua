@@ -41,6 +41,20 @@ local function CurrentDbVersion()
   return tonumber(RepriseHC.defaultDbVersion) or 1
 end
 
+local function AdjustmentNotices()
+  DB().guildFirstAdjustmentNotices = DB().guildFirstAdjustmentNotices or {}
+
+  local notices = DB().guildFirstAdjustmentNotices
+  local version = tostring(CurrentDbVersion() or 0)
+
+  if notices._version ~= version then
+    notices = { _version = version }
+    DB().guildFirstAdjustmentNotices = notices
+  end
+
+  return notices
+end
+
 -- ========= Printing =========
 local function Print(msg)
   if RepriseHC and RepriseHC.Print then
