@@ -2,6 +2,11 @@ local ALERT_DURATION = 4.5
 local FADE_DURATION  = 0.35
 local QUEUE = {}
 
+local FitFontString
+
+local TITLE_MIN_SIZE = 10
+local TITLE_BASE_SIZE = 14
+
 local function GetFactionIcon()
   local faction = UnitFactionGroup("player")
   if faction == "Horde" then
@@ -68,6 +73,12 @@ local function GetToastFrame()
   frame.title:SetWordWrap(true)
   frame.title:SetMaxLines(2)
   frame.title:SetTextColor(1, 0.82, 0)
+  do
+    local font, _, flags = frame.title:GetFont()
+    if font then
+      frame.title:SetFont(font, TITLE_BASE_SIZE, flags)
+    end
+  end
 
   frame.points = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   frame.points:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 18, 10)
@@ -77,6 +88,12 @@ local function GetToastFrame()
 
   frame._duration = ALERT_DURATION
   frame._fade = FADE_DURATION
+
+  function frame:EnsureTitleFits()
+    local maxWidth = self:GetWidth() - 36
+    local text = self.title:GetText() or ""
+    FitFontString(self.title, text, maxWidth, 2)
+  end
 
   frame:SetScript("OnHide", function(self)
     self._playing = false
@@ -115,11 +132,17 @@ local function GetToastFrame()
     local nextEntry = table.remove(QUEUE, 1)
     if not nextEntry then return end
 
+    local font, _, flags = self.title:GetFont()
+    if font then
+      self.title:SetFont(font, TITLE_BASE_SIZE, flags)
+    end
     self.title:SetText(nextEntry.title or "Achievement Earned")
     local pts = tonumber(nextEntry.points) or 0
     self.points:SetText(string.format("+%d Points", pts))
 
     self.icon:SetTexture(GetFactionIcon())
+
+    self:EnsureTitleFits()
 
     self._start = GetTime()
     self._playing = true
@@ -132,6 +155,32 @@ local function GetToastFrame()
   end
 
   return frame
+end
+
+function FitFontString(fs, text, maxWidth, maxLines)
+  if not fs or not text or not maxWidth then return end
+
+  local font, _, flags = fs:GetFont()
+  if not font then return end
+
+  local size = TITLE_BASE_SIZE
+  fs:SetFont(font, size, flags)
+  fs:SetWidth(maxWidth)
+  fs:SetText(text)
+
+  local limitLines = maxLines or 2
+  local function exceeds()
+    local overWidth = fs:GetStringWidth() > maxWidth
+    local lineHeight = fs:GetLineHeight() or size
+    local overHeight = fs:GetStringHeight() > (lineHeight * limitLines)
+    return overWidth or overHeight
+  end
+
+  while size > TITLE_MIN_SIZE and exceeds() do
+    size = size - 1
+    fs:SetFont(font, size, flags)
+    fs:SetText(text)
+  end
 end
 
 local function EnqueueToast(title, points)
