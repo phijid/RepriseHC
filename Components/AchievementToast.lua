@@ -33,25 +33,38 @@ local function GetFactionIcon()
   return "Interface\\Icons\\INV_Misc_Trophy_01"
 end
 
+local function TryPlaySound(id)
+  if not PlaySound then return false end
+  if type(id) ~= "number" and type(id) ~= "string" then return false end
+
+  local ok = pcall(PlaySound, id, "Master")
+  if ok then return true end
+
+  ok = pcall(PlaySound, id)
+  return ok and true or false
+end
+
+local function TryPlaySoundFile(path)
+  if not PlaySoundFile or type(path) ~= "string" then return false end
+
+  local ok = pcall(PlaySoundFile, path, "Master")
+  if ok then return true end
+
+  ok = pcall(PlaySoundFile, path)
+  return ok and true or false
+end
+
 local function PlayAchievementSound()
-  if PlaySound then
-    for _, idOrFn in ipairs(SOUND_IDS) do
-      local id = type(idOrFn) == "function" and idOrFn() or idOrFn
-      if id then
-        local ok = PlaySound(id, "Master")
-        if ok then
-          return true
-        end
-      end
+  for _, idOrFn in ipairs(SOUND_IDS) do
+    local id = type(idOrFn) == "function" and idOrFn() or idOrFn
+    if TryPlaySound(id) then
+      return true
     end
   end
 
-  if PlaySoundFile then
-    for _, path in ipairs(SOUND_PATHS) do
-      local ok = PlaySoundFile(path, "Master")
-      if ok then
-        return true
-      end
+  for _, path in ipairs(SOUND_PATHS) do
+    if TryPlaySoundFile(path) then
+      return true
     end
   end
 
