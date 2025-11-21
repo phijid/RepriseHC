@@ -1716,6 +1716,8 @@ local function ApplyAchievementPayload(p, sender)
   local c = db.characters[p.playerKey]
   c.achievements = c.achievements or {}
 
+  local hadAchievement = c.achievements[p.id] ~= nil
+
   c.achievements[p.id] = {
     name = p.name or p.id,
     points = points,
@@ -1739,6 +1741,21 @@ local function ApplyAchievementPayload(p, sender)
     c.dbVersion = tonumber(c.dbVersion or c.dbv) or 0
   end
   c.dbv = nil
+
+  if not hadAchievement then
+    local selfKey
+    if RepriseHC and RepriseHC.GetPlayerKey then
+      selfKey = RepriseHC.GetPlayerKey()
+    elseif RepriseHC and RepriseHC.PlayerKey then
+      selfKey = RepriseHC.PlayerKey()
+    end
+
+    if selfKey and CanonicalShort(selfKey) == CanonicalShort(p.playerKey) then
+      if RepriseHC and RepriseHC.ShowAchievementToast then
+        RepriseHC.ShowAchievementToast(p.name or p.id, points)
+      end
+    end
+  end
 
   if p.id and p.id:find("^FIRST_" .. ((RepriseHC.GetLevelCap and RepriseHC.GetLevelCap()) or (RepriseHC.levelCap or 60))) then
     local gf = db.guildFirsts[p.id]

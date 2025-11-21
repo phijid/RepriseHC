@@ -189,6 +189,10 @@ local function EarnAchievement(id, displayName, points)
   else
     c.points = (c.points or 0) + (points or 0)
   end
+
+  if RepriseHC and RepriseHC.ShowAchievementToast then
+    RepriseHC.ShowAchievementToast(displayName, points)
+  end
   return true
 end
 
