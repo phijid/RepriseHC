@@ -16,8 +16,22 @@ table.sort(levelMilestones)
 local faction = (UnitFactionGroup and select(1, UnitFactionGroup("player"))) or "Alliance"
 
 -- ========= DB =========
-RepriseHCAchievementsDB = RepriseHCAchievementsDB or { characters = {}, guildFirsts = {}, deathLog = {}, config = {}, groupAssignments = {} }
+RepriseHCAchievementsDB = RepriseHCAchievementsDB or { characters = {}, guildFirsts = {}, deathLog = {}, config = {}, groupAssignments = {}, guildFirstAdjustmentNotices = {} }
 local function DB() return RepriseHCAchievementsDB end
+
+local function AdjustmentNotices()
+  DB().guildFirstAdjustmentNotices = DB().guildFirstAdjustmentNotices or {}
+
+  local notices = DB().guildFirstAdjustmentNotices
+  local version = tostring(CurrentDbVersion() or 0)
+
+  if notices._version ~= version then
+    notices = { _version = version }
+    DB().guildFirstAdjustmentNotices = notices
+  end
+
+  return notices
+end
 
 local function CurrentDbVersion()
   if RepriseHC and RepriseHC.GetDbVersion then
@@ -560,6 +574,20 @@ local function LockGuildFirst(id, winnerKey, winnerName)
   return false
 end
 
+local function ShouldAnnounceGuildFirstAdjustment(playerKey, achId)
+  if not playerKey or not achId then return false end
+
+  local notices = AdjustmentNotices()
+  notices[playerKey] = notices[playerKey] or {}
+
+  if notices[playerKey][achId] then
+    return false
+  end
+
+  notices[playerKey][achId] = true
+  return true
+end
+
 local function AnnounceGuildFirstAdjustment(targetName, achName, winnerName)
   local safeTarget = targetName or "A player"
   local safeAch    = achName or "a guild first achievement"
@@ -567,9 +595,6 @@ local function AnnounceGuildFirstAdjustment(targetName, achName, winnerName)
 
   local msg = string.format("%s's points were adjusted: %s was earned earlier by %s.", safeTarget, safeAch, safeWinner)
   Print(msg)
-  if SendChatMessage then
-    SendChatMessage(msg, "GUILD")
-  end
 end
 
 function RepriseHC.ResolveGuildFirstConflicts(achId)
@@ -597,8 +622,10 @@ function RepriseHC.ResolveGuildFirstConflicts(achId)
               RepriseHC.NormalizeCharacterAchievements(char, version)
             end
 
-            local displayTarget = char.name or playerKey
-            AnnounceGuildFirstAdjustment(displayTarget, achName, winnerName)
+            if playerKey == PlayerKey() and ShouldAnnounceGuildFirstAdjustment(playerKey, achId) then
+              local displayTarget = char.name or playerKey
+              AnnounceGuildFirstAdjustment(displayTarget, achName, winnerName)
+            end
           end
         end
       end
