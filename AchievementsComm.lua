@@ -120,8 +120,18 @@ end
 -- -------- encode/decode (structured primary, legacy RX fallback) --------
 local function Encode(tbl)
   -- AceSerializer strings are safe for addon channels and AceComm handles splitting.
-  local s = AceSer:Serialize(tbl)
-  return s
+  local ok, s = pcall(AceSer.Serialize, AceSer, tbl)
+  if ok then return s end
+  if DebugDeathLog() then
+    local keys
+    if type(tbl) == "table" then
+      keys = {}
+      for k in pairs(tbl) do table.insert(keys, tostring(k)) end
+      table.sort(keys)
+      keys = table.concat(keys, ",")
+    end
+    debugPrint("AceSer serialize failed; payload keys=", keys or "-")
+  end
 end
 
 local function CurrentDbVersion()
@@ -467,12 +477,67 @@ local function ShouldAcceptIncremental(dbv, sender)
   return true, incoming, localVersion
 end
 
+local decodeFailureLog = {}
+
 local function TryDecodeAce(payload)
-  local ok, t = AceSer:Deserialize(payload)
-  if ok and type(t) == "table" then return t end
-  if DebugDeathLog() then
-    debugPrint("AceSer deserialize failed; raw=", tostring(payload):sub(1, 40), "...")
+  local payloadType = type(payload)
+  if payloadType ~= "string" then
+    if DebugDeathLog() then
+      debugPrint("AceSer deserialize skipped; payload type=", payloadType)
+    end
+    return nil, payloadType
   end
+
+  local function attemptDecode(str)
+    local ok, success, value = pcall(AceSer.Deserialize, AceSer, str)
+    return ok, success, value
+  end
+
+  local ok, success, value = attemptDecode(payload)
+
+  if not ok or not success then
+    -- If the payload looks like AceSerializer data but might be truncated, try
+    -- re-attaching the terminator and decode once more before giving up.
+    if payload:sub(1, 2) == "^1" and not payload:find("%^^%^") then
+      ok, success, value = attemptDecode(payload .. "^^")
+    end
+  end
+
+  if ok and success and type(value) == "table" then
+    return value
+  end
+
+  local now = GetTime and GetTime() or time()
+  local snippet = tostring(payload):sub(1, 80)
+  local dedupeKey = snippet
+  local shouldLog = true
+  if dedupeKey and decodeFailureLog[dedupeKey] then
+    if now - decodeFailureLog[dedupeKey] < 3 then
+      shouldLog = false
+    end
+  end
+  decodeFailureLog[dedupeKey] = now
+
+  if DebugDeathLog() and shouldLog then
+    if not ok then
+      debugPrint("AceSer deserialize error; raw=", snippet, "...")
+    elseif not success then
+      local errText = tostring(value)
+      debugPrint("AceSer deserialize rejected payload; reason=", errText, " raw=", snippet, "...")
+    else
+      debugPrint("AceSer deserialize failed; raw=", snippet, "...")
+    end
+  end
+
+  local errSummary
+  if not ok then
+    errSummary = "lua-error"
+  elseif not success then
+    errSummary = tostring(value)
+  else
+    errSummary = "unknown"
+  end
+  return nil, errSummary
 end
 
 
@@ -1668,6 +1733,10 @@ local function ApplyAchievementPayload(p, sender)
       end
     end
     if gf then gf.dbv = nil end
+
+    if RepriseHC and RepriseHC.ResolveGuildFirstConflicts then
+      RepriseHC.ResolveGuildFirstConflicts(p.id)
+    end
   end
 
   if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
@@ -1799,6 +1868,8 @@ local function ApplyGroupPayload(p, sender)
   if changed and RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
 end
 
+local lastDecodeSnapshotRequestAt = 0
+
 local function HandleIncoming(prefix, payload, channel, sender)
 
   if DebugDeathLog() then
@@ -1806,10 +1877,18 @@ local function HandleIncoming(prefix, payload, channel, sender)
   end
 
   if prefix ~= PREFIX then return end
-  local t = TryDecodeAce(payload); if not t then t = TryDecodeLegacy(payload) end
+  local t, decodeErr = TryDecodeAce(payload); if not t then t = TryDecodeLegacy(payload) end
   if not t then
     if DebugDeathLog() then
-      debugPrint("decode failed; dropping. prefix=", prefix, "from=", sender)
+      debugPrint("decode failed; dropping. prefix=", prefix, "from=", sender, "err=", decodeErr)
+    end
+    if sender and MaybeSendTargetedSnapshot then
+      MaybeSendTargetedSnapshot(sender, "decode-failed")
+    end
+    local now = GetTime and GetTime() or time()
+    if RequestFullSnapshot and (now - lastDecodeSnapshotRequestAt) > 6 then
+      lastDecodeSnapshotRequestAt = now
+      RequestFullSnapshot("decode-failed", true)
     end
     return
   end
@@ -1835,19 +1914,45 @@ local function HandleIncoming(prefix, payload, channel, sender)
 
 
   elseif topic == "DEATH" then
-    local accept, incomingVersion, _, reason = ShouldAcceptIncremental(p.dbv, sender)
-    if not accept then
-      if DebugDeathLog() then
-        debugPrint(
-          "DEATH payload delayed:", reason or "?", "incoming=", incomingVersion or "?",
-          "local=", CurrentDbVersion()
-        )
+    if DebugDeathLog() then
+      local age = nil
+      local when = tonumber(p.when or p.time)
+      if when then
+        age = (time() - math.floor(when))
+        if age < 0 then age = 0 end
       end
-      if reason == "future" then
-        QueuePendingIncremental(incomingVersion, { topic = "DEATH", payload = DeepCopy(p) }, sender, sid, channel, q, t.ts)
-      end
-      return
+      debugPrint("DEATH payload rx from", sender or sid or "?", "age=", age, "dbv=", p.dbv or p.dbVersion or "?")
     end
+
+    local incomingVersion = tonumber(p.dbv or p.dbVersion) or 0
+    if incomingVersion == 0 then
+      incomingVersion = CurrentDbVersion()
+      p.dbv = incomingVersion
+      p.dbVersion = incomingVersion
+      if DebugDeathLog() then
+        debugPrint("DEATH payload missing dbv — defaulting to", incomingVersion)
+      end
+    end
+
+    local localVersion = CurrentDbVersion()
+    if incomingVersion > localVersion then
+      EnsureDbVersion(incomingVersion)
+      localVersion = incomingVersion
+      if DebugDeathLog() then
+        debugPrint("DEATH payload advanced local db version to", incomingVersion)
+      end
+    end
+
+    if incomingVersion < localVersion then
+      incomingVersion = localVersion
+      p.dbv = localVersion
+      p.dbVersion = localVersion
+      if DebugDeathLog() then
+        debugPrint("DEATH payload normalized to current db version", localVersion)
+      end
+    end
+
+    -- Always apply deaths immediately after normalizing versions; do not queue.
     if DebugDeathLog() then
       debugPrint(
         "DEATH payload accepted from", sender or sid or "?", "when=", p.when or p.time or "?", "channel=", channel or "?"
@@ -2053,6 +2158,7 @@ function RepriseHC.Comm_Send(topic, payloadTable)
   end
 
   if topic == "DEATH" then
+    local delivered = usedGuild or usedGroup
     -- Try the direct 1:1 path first (when only 2 online)
     if DebugDeathLog() then
       debugPrint("Comm_Send(DEATH): trying direct send to online peer")
@@ -2062,10 +2168,27 @@ function RepriseHC.Comm_Send(topic, payloadTable)
       debugPrint("Comm_Send(DEATH): direct path", didDirect and "hit" or "skipped", "— whisper fan-out next")
     end
 
+    delivered = delivered or didDirect
+
     -- Also do the regular fan-out (covers >2 online)
-    SendWhisperFallback(wire, 12)
+    local fanoutSent = SendWhisperFallback(wire, 12)
     if DebugDeathLog() then
       debugPrint("Comm_Send(DEATH): whisper fan-out sent to 12 peers")
+    end
+
+    delivered = delivered or fanoutSent
+
+    if not delivered and C_Timer and C_Timer.After then
+      C_Timer.After(2, function()
+        local retriedGuild = SendViaGuild(wire)
+        local retriedGroup = not retriedGuild and SendViaGroup(wire)
+        local retriedFanout = SendWhisperFallback(wire, 12)
+        if DebugDeathLog() then
+          debugPrint(
+            "Comm_Send(DEATH): retry (2s) guild=", retriedGuild, "group=", retriedGroup, "fanout=", retriedFanout
+          )
+        end
+      end)
     end
 
     -- Late resend for good measure
