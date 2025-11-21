@@ -478,12 +478,15 @@ local function ShouldAcceptIncremental(dbv, sender)
   return true, incoming, localVersion
 end
 
+local decodeFailureLog = {}
+
 local function TryDecodeAce(payload)
-  if type(payload) ~= "string" then
+  local payloadType = type(payload)
+  if payloadType ~= "string" then
     if DebugDeathLog() then
-      debugPrint("AceSer deserialize skipped; payload type=", type(payload))
+      debugPrint("AceSer deserialize skipped; payload type=", payloadType)
     end
-    return
+    return nil, payloadType
   end
 
   local function attemptDecode(str)
@@ -496,7 +499,7 @@ local function TryDecodeAce(payload)
   if not ok or not success then
     -- If the payload looks like AceSerializer data but might be truncated, try
     -- re-attaching the terminator and decode once more before giving up.
-    if type(payload) == "string" and payload:sub(1, 2) == "^1" and not payload:find("%^^%^") then
+    if payload:sub(1, 2) == "^1" and not payload:find("%^^%^") then
       ok, success, value = attemptDecode(payload .. "^^")
     end
   end
@@ -505,8 +508,18 @@ local function TryDecodeAce(payload)
     return value
   end
 
-  if DebugDeathLog() then
-    local snippet = tostring(payload):sub(1, 80)
+  local now = GetTime and GetTime() or time()
+  local snippet = tostring(payload):sub(1, 80)
+  local dedupeKey = snippet
+  local shouldLog = true
+  if dedupeKey and decodeFailureLog[dedupeKey] then
+    if now - decodeFailureLog[dedupeKey] < 3 then
+      shouldLog = false
+    end
+  end
+  decodeFailureLog[dedupeKey] = now
+
+  if DebugDeathLog() and shouldLog then
     if not ok then
       debugPrint("AceSer deserialize error; raw=", snippet, "...")
     elseif not success then
@@ -516,6 +529,16 @@ local function TryDecodeAce(payload)
       debugPrint("AceSer deserialize failed; raw=", snippet, "...")
     end
   end
+
+  local errSummary
+  if not ok then
+    errSummary = "lua-error"
+  elseif not success then
+    errSummary = tostring(value)
+  else
+    errSummary = "unknown"
+  end
+  return nil, errSummary
 end
 
 
@@ -1846,6 +1869,8 @@ local function ApplyGroupPayload(p, sender)
   if changed and RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
 end
 
+local lastDecodeSnapshotRequestAt = 0
+
 local function HandleIncoming(prefix, payload, channel, sender)
 
   if DebugDeathLog() then
@@ -1853,10 +1878,18 @@ local function HandleIncoming(prefix, payload, channel, sender)
   end
 
   if prefix ~= PREFIX then return end
-  local t = TryDecodeAce(payload); if not t then t = TryDecodeLegacy(payload) end
+  local t, decodeErr = TryDecodeAce(payload); if not t then t = TryDecodeLegacy(payload) end
   if not t then
     if DebugDeathLog() then
-      debugPrint("decode failed; dropping. prefix=", prefix, "from=", sender)
+      debugPrint("decode failed; dropping. prefix=", prefix, "from=", sender, "err=", decodeErr)
+    end
+    if sender and MaybeSendTargetedSnapshot then
+      MaybeSendTargetedSnapshot(sender, "decode-failed")
+    end
+    local now = GetTime and GetTime() or time()
+    if RequestFullSnapshot and (now - lastDecodeSnapshotRequestAt) > 6 then
+      lastDecodeSnapshotRequestAt = now
+      RequestFullSnapshot("decode-failed", true)
     end
     if RequestFullSnapshot then
       local now = GetTime and GetTime() or time()
