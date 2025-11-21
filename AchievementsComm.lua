@@ -1668,6 +1668,10 @@ local function ApplyAchievementPayload(p, sender)
       end
     end
     if gf then gf.dbv = nil end
+
+    if RepriseHC and RepriseHC.ResolveGuildFirstConflicts then
+      RepriseHC.ResolveGuildFirstConflicts(p.id)
+    end
   end
 
   if RepriseHC.RefreshUI then RepriseHC.RefreshUI() end
@@ -1835,16 +1839,40 @@ local function HandleIncoming(prefix, payload, channel, sender)
 
 
   elseif topic == "DEATH" then
-    local accept, incomingVersion, _, reason = ShouldAcceptIncremental(p.dbv, sender)
+    local incomingVersion = tonumber(p.dbv or p.dbVersion) or 0
+    if incomingVersion == 0 then
+      incomingVersion = CurrentDbVersion()
+      p.dbv = incomingVersion
+      p.dbVersion = incomingVersion
+      if DebugDeathLog() then
+        debugPrint("DEATH payload missing dbv — defaulting to", incomingVersion)
+      end
+    end
+
+    local localVersion = CurrentDbVersion()
+    if incomingVersion > localVersion then
+      EnsureDbVersion(incomingVersion)
+      localVersion = incomingVersion
+      if DebugDeathLog() then
+        debugPrint("DEATH payload advanced local db version to", incomingVersion)
+      end
+    end
+
+    local accept, _, _, reason = ShouldAcceptIncremental(incomingVersion, sender)
+    if not accept and reason == "future" then
+      -- Deaths should apply immediately; adopt the incoming version and proceed.
+      EnsureDbVersion(incomingVersion)
+      accept = true
+      if DebugDeathLog() then
+        debugPrint("DEATH payload forced immediate acceptance of future version", incomingVersion)
+      end
+    end
     if not accept then
       if DebugDeathLog() then
         debugPrint(
           "DEATH payload delayed:", reason or "?", "incoming=", incomingVersion or "?",
-          "local=", CurrentDbVersion()
+          "local=", localVersion
         )
-      end
-      if reason == "future" then
-        QueuePendingIncremental(incomingVersion, { topic = "DEATH", payload = DeepCopy(p) }, sender, sid, channel, q, t.ts)
       end
       return
     end
