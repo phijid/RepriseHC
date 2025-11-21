@@ -486,18 +486,32 @@ local function TryDecodeAce(payload)
     return
   end
 
-  local ok, success, value = pcall(AceSer.Deserialize, AceSer, payload)
+  local function attemptDecode(str)
+    local ok, success, value = pcall(AceSer.Deserialize, AceSer, str)
+    return ok, success, value
+  end
+
+  local ok, success, value = attemptDecode(payload)
+
+  if not ok or not success then
+    -- If the payload looks like AceSerializer data but might be truncated, try
+    -- re-attaching the terminator and decode once more before giving up.
+    if type(payload) == "string" and payload:sub(1, 2) == "^1" and not payload:find("%^^%^") then
+      ok, success, value = attemptDecode(payload .. "^^")
+    end
+  end
 
   if ok and success and type(value) == "table" then
     return value
   end
 
   if DebugDeathLog() then
-    local snippet = tostring(payload):sub(1, 40)
+    local snippet = tostring(payload):sub(1, 80)
     if not ok then
       debugPrint("AceSer deserialize error; raw=", snippet, "...")
     elseif not success then
-      debugPrint("AceSer deserialize rejected payload; raw=", snippet, "...")
+      local errText = tostring(value)
+      debugPrint("AceSer deserialize rejected payload; reason=", errText, " raw=", snippet, "...")
     else
       debugPrint("AceSer deserialize failed; raw=", snippet, "...")
     end
