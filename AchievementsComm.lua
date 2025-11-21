@@ -12,6 +12,7 @@ local lastPostChangeSnapshotAt = 0
 local lastSnapshotRequestAt = 0
 local lastGuildSyncAt = 0
 local PERIODIC_SYNC_INTERVAL = 60
+local lastDecodeFailureAt = 0
 local targetedSnapshotSentAt = {}
 local knownOnlineGuildmates = {}
 local TARGETED_SNAPSHOT_MIN_INTERVAL = 30
