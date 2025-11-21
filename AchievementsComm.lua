@@ -121,8 +121,18 @@ end
 -- -------- encode/decode (structured primary, legacy RX fallback) --------
 local function Encode(tbl)
   -- AceSerializer strings are safe for addon channels and AceComm handles splitting.
-  local s = AceSer:Serialize(tbl)
-  return s
+  local ok, s = pcall(AceSer.Serialize, AceSer, tbl)
+  if ok then return s end
+  if DebugDeathLog() then
+    local keys
+    if type(tbl) == "table" then
+      keys = {}
+      for k in pairs(tbl) do table.insert(keys, tostring(k)) end
+      table.sort(keys)
+      keys = table.concat(keys, ",")
+    end
+    debugPrint("AceSer serialize failed; payload keys=", keys or "-")
+  end
 end
 
 local function CurrentDbVersion()
@@ -469,10 +479,22 @@ local function ShouldAcceptIncremental(dbv, sender)
 end
 
 local function TryDecodeAce(payload)
-  local ok, t = AceSer:Deserialize(payload)
+  if type(payload) ~= "string" then
+    if DebugDeathLog() then
+      debugPrint("AceSer deserialize skipped; payload type=", type(payload))
+    end
+    return
+  end
+
+  local ok, t = pcall(AceSer.Deserialize, AceSer, payload)
   if ok and type(t) == "table" then return t end
+
   if DebugDeathLog() then
-    debugPrint("AceSer deserialize failed; raw=", tostring(payload):sub(1, 40), "...")
+    if not ok then
+      debugPrint("AceSer deserialize error; raw=", tostring(payload):sub(1, 40), "...")
+    else
+      debugPrint("AceSer deserialize failed; raw=", tostring(payload):sub(1, 40), "...")
+    end
   end
 end
 
