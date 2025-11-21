@@ -489,6 +489,18 @@ local function TryDecodeAce(payload)
     return nil, payloadType
   end
 
+  local firstMarker = payload:find("%^1")
+  if not firstMarker then
+    if DebugDeathLog() then
+      debugPrint("AceSer deserialize skipped; no ^1 marker in payload")
+    end
+    return nil, "no-marker"
+  end
+
+  if firstMarker > 1 then
+    payload = payload:sub(firstMarker)
+  end
+
   local function attemptDecode(str)
     local ok, success, value = pcall(AceSer.Deserialize, AceSer, str)
     return ok, success, value
@@ -501,6 +513,21 @@ local function TryDecodeAce(payload)
     -- re-attaching the terminator and decode once more before giving up.
     if payload:sub(1, 2) == "^1" and not payload:find("%^^%^") then
       ok, success, value = attemptDecode(payload .. "^^")
+    end
+
+    -- Some payloads arrive with stray leading characters (eg. embedded chat
+    -- control bytes) that confuse AceSerializer. Trim to the first marker and
+    -- attempt decoding again so we don't treat recoverable payloads as
+    -- failures.
+    if (not ok or not success) and payload:find("%^^1") then
+      local start = payload:find("%^^1")
+      local trimmed = payload:sub(start)
+      if trimmed and trimmed ~= payload then
+        if not trimmed:find("%^^%^") then
+          trimmed = trimmed .. "^^"
+        end
+        ok, success, value = attemptDecode(trimmed)
+      end
     end
   end
 
@@ -1890,13 +1917,6 @@ local function HandleIncoming(prefix, payload, channel, sender)
     if RequestFullSnapshot and (now - lastDecodeSnapshotRequestAt) > 6 then
       lastDecodeSnapshotRequestAt = now
       RequestFullSnapshot("decode-failed", true)
-    end
-    if RequestFullSnapshot then
-      local now = GetTime and GetTime() or time()
-      if now - (lastDecodeFailureAt or 0) > 4 then
-        lastDecodeFailureAt = now
-        RequestFullSnapshot("decode-failed", true)
-      end
     end
     return
   end
