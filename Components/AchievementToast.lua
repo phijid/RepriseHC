@@ -5,7 +5,7 @@ local QUEUE = {}
 local FitFontString
 
 local TITLE_MIN_SIZE = 10
-local TITLE_BASE_SIZE = 14
+local TITLE_BASE_SIZE = 13
 
 local function GetFactionIcon()
   local faction = UnitFactionGroup("player")
@@ -34,7 +34,7 @@ local function GetToastFrame()
   end
 
   local frame = CreateFrame("Frame", "RepriseHC_AchievementToast", UIParent, "BackdropTemplate")
-  frame:SetSize(340, 92)
+  frame:SetSize(368, 98)
   frame:SetPoint("TOP", UIParent, "TOP", 0, -180)
   frame:SetFrameStrata("FULLSCREEN_DIALOG")
   frame:SetClampedToScreen(true)
@@ -46,13 +46,27 @@ local function GetToastFrame()
     tile = true, tileSize = 16, edgeSize = 14,
     insets = { left = 6, right = 6, top = 6, bottom = 6 },
   })
-  frame:SetBackdropColor(0.1, 0.1, 0.1, 0.94)
+  frame:SetBackdropColor(0.08, 0.08, 0.08, 0.94)
+
+  frame.shine = frame:CreateTexture(nil, "BACKGROUND")
+  frame.shine:SetTexture("Interface\\ACHIEVEMENTFRAME\\UI-Achievement-RecentHighlight")
+  frame.shine:SetBlendMode("ADD")
+  frame.shine:SetAlpha(0.22)
+  frame.shine:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -8)
+  frame.shine:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -8, 8)
+
+  frame.accent = frame:CreateTexture(nil, "BACKGROUND")
+  frame.accent:SetTexture(1, 0.82, 0)
+  frame.accent:SetAlpha(0.65)
+  frame.accent:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -10)
+  frame.accent:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 10, 10)
+  frame.accent:SetWidth(3)
 
   frame.iconBG = frame:CreateTexture(nil, "ARTWORK")
   frame.iconBG:SetTexture("Interface\\ACHIEVEMENTFRAME\\UI-Achievement-IconFrame")
   frame.iconBG:SetTexCoord(0, 0.5625, 0, 0.5625)
   frame.iconBG:SetSize(54, 54)
-  frame.iconBG:SetPoint("RIGHT", frame, "LEFT", 6, 0)
+  frame.iconBG:SetPoint("RIGHT", frame, "LEFT", -8, 0)
 
   frame.icon = frame:CreateTexture(nil, "ARTWORK")
   frame.icon:SetTexture(GetFactionIcon())
@@ -60,13 +74,13 @@ local function GetToastFrame()
   frame.icon:SetSize(40, 40)
 
   frame.content = CreateFrame("Frame", nil, frame)
-  frame.content:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -12)
-  frame.content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 14)
+  frame.content:SetPoint("TOPLEFT", frame, "TOPLEFT", 22, -12)
+  frame.content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, 12)
 
   frame.title = frame.content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   frame.title:SetPoint("TOPLEFT", frame.content, "TOPLEFT", 0, 0)
   frame.title:SetPoint("TOPRIGHT", frame.content, "TOPRIGHT", 0, 0)
-  frame.title:SetJustifyH("LEFT")
+  frame.title:SetJustifyH("CENTER")
   frame.title:SetJustifyV("TOP")
   frame.title:SetWordWrap(true)
   frame.title:SetMaxLines(3)
@@ -83,6 +97,12 @@ local function GetToastFrame()
   frame.points:SetPoint("BOTTOMRIGHT", frame.content, "BOTTOMRIGHT", 0, 0)
   frame.points:SetJustifyH("CENTER")
   frame.points:SetTextColor(0.9, 0.95, 1)
+  do
+    local font, _, flags = frame.points:GetFont()
+    if font then
+      frame.points:SetFont(font, 13, flags)
+    end
+  end
 
   frame._duration = ALERT_DURATION
   frame._fade = FADE_DURATION
@@ -95,6 +115,8 @@ local function GetToastFrame()
     self.title:SetMaxLines(3)
     self.title:SetHeight(availableHeight)
     FitFontString(self.title, text, maxWidth, 3, 3, availableHeight)
+    local usedHeight = math.min(self.title:GetStringHeight() or availableHeight, availableHeight)
+    self.title:SetHeight(usedHeight)
   end
 
   frame:SetScript("OnHide", function(self)
@@ -199,6 +221,10 @@ function FitFontString(fs, text, maxWidth, maxLines, fallbackLines, maxHeight)
       fs:SetFont(font, size, flags)
       fs:SetText(text)
     end
+  end
+
+  if maxHeight then
+    fs:SetHeight(math.min(maxHeight, fs:GetStringHeight() or maxHeight))
   end
 end
 
