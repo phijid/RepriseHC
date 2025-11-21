@@ -486,14 +486,20 @@ local function TryDecodeAce(payload)
     return
   end
 
-  local ok, t = pcall(AceSer.Deserialize, AceSer, payload)
-  if ok and type(t) == "table" then return t end
+  local ok, success, value = pcall(AceSer.Deserialize, AceSer, payload)
+
+  if ok and success and type(value) == "table" then
+    return value
+  end
 
   if DebugDeathLog() then
+    local snippet = tostring(payload):sub(1, 40)
     if not ok then
-      debugPrint("AceSer deserialize error; raw=", tostring(payload):sub(1, 40), "...")
+      debugPrint("AceSer deserialize error; raw=", snippet, "...")
+    elseif not success then
+      debugPrint("AceSer deserialize rejected payload; raw=", snippet, "...")
     else
-      debugPrint("AceSer deserialize failed; raw=", tostring(payload):sub(1, 40), "...")
+      debugPrint("AceSer deserialize failed; raw=", snippet, "...")
     end
   end
 end
