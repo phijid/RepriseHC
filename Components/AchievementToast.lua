@@ -2,13 +2,34 @@ local ALERT_DURATION = 4.5
 local FADE_DURATION  = 0.35
 local QUEUE = {}
 
+local function GetFactionIcon()
+  local faction = UnitFactionGroup("player")
+  if faction == "Horde" then
+    return "Interface\\Icons\\INV_BannerPVP_01"
+  elseif faction == "Alliance" then
+    return "Interface\\Icons\\INV_BannerPVP_02"
+  end
+
+  return "Interface\\Icons\\INV_Misc_Trophy_01"
+end
+
+local function PlayAchievementSound()
+  if SOUNDKIT and SOUNDKIT.UI_ACHIEVEMENT_AWARDED and PlaySound then
+    PlaySound(SOUNDKIT.UI_ACHIEVEMENT_AWARDED, "Master")
+  elseif PlaySound then
+    PlaySound(12891, "Master")
+  elseif PlaySoundFile then
+    PlaySoundFile("Sound\\Interface\\UI_Achievement_Toast.wav", "Master")
+  end
+end
+
 local function GetToastFrame()
   if _G.RepriseHC_AchievementToast then
     return _G.RepriseHC_AchievementToast
   end
 
   local frame = CreateFrame("Frame", "RepriseHC_AchievementToast", UIParent, "BackdropTemplate")
-  frame:SetSize(320, 86)
+  frame:SetSize(356, 82)
   frame:SetPoint("TOP", UIParent, "TOP", 0, -180)
   frame:SetFrameStrata("FULLSCREEN_DIALOG")
   frame:SetClampedToScreen(true)
@@ -18,35 +39,37 @@ local function GetToastFrame()
   frame.bg:SetAllPoints()
   frame.bg:SetTexture("Interface\\AchievementFrame\\UI-Achievement-Alert-Background")
   frame.bg:SetTexCoord(0, 1, 0, 0.78)
-  frame.bg:SetVertexColor(1, 1, 1, 0.95)
+  frame.bg:SetVertexColor(1, 1, 1, 0.96)
 
-  frame.glow = frame:CreateTexture(nil, "BORDER")
-  frame.glow:SetTexture("Interface\\AchievementFrame\\UI-Achievement-Alert-Glow")
-  frame.glow:SetPoint("TOPLEFT", -14, 14)
-  frame.glow:SetPoint("BOTTOMRIGHT", 14, -14)
-  frame.glow:SetBlendMode("ADD")
-  frame.glow:SetAlpha(0)
+  frame.border = frame:CreateTexture(nil, "BORDER")
+  frame.border:SetTexture("Interface\\AchievementFrame\\UI-Achievement-Alert-Background")
+  frame.border:SetTexCoord(0, 1, 0.78, 1)
+  frame.border:SetVertexColor(1, 1, 1, 0.82)
+  frame.border:SetPoint("TOPLEFT", frame.bg, "BOTTOMLEFT", 0, 6)
+  frame.border:SetPoint("TOPRIGHT", frame.bg, "BOTTOMRIGHT", 0, 6)
+  frame.border:SetHeight(8)
 
   frame.iconBG = frame:CreateTexture(nil, "ARTWORK")
-  frame.iconBG:SetTexture("Interface\\AchievementFrame\\UI-Achievement-IconFrame")
+  frame.iconBG:SetTexture("Interface\\ACHIEVEMENTFRAME\\UI-Achievement-IconFrame")
   frame.iconBG:SetTexCoord(0, 0.5625, 0, 0.5625)
-  frame.iconBG:SetSize(64, 64)
-  frame.iconBG:SetPoint("LEFT", 18, 0)
+  frame.iconBG:SetSize(60, 60)
+  frame.iconBG:SetPoint("LEFT", 18, -2)
 
   frame.icon = frame:CreateTexture(nil, "ARTWORK")
-  frame.icon:SetTexture("Interface\\Icons\\INV_Misc_Trophy_01")
+  frame.icon:SetTexture(GetFactionIcon())
   frame.icon:SetPoint("CENTER", frame.iconBG, "CENTER", 0, 0)
-  frame.icon:SetSize(40, 40)
+  frame.icon:SetSize(44, 44)
 
-  frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-  frame.title:SetPoint("TOPLEFT", frame.iconBG, "TOPRIGHT", 12, -4)
-  frame.title:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -14, -10)
+  frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  frame.title:SetPoint("TOPLEFT", frame.iconBG, "TOPRIGHT", 12, -6)
+  frame.title:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -18, -10)
   frame.title:SetJustifyH("LEFT")
+  frame.title:SetWordWrap(true)
   frame.title:SetTextColor(1, 0.82, 0)
 
   frame.points = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   frame.points:SetPoint("BOTTOMLEFT", frame.iconBG, "BOTTOMRIGHT", 12, 8)
-  frame.points:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 10)
+  frame.points:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 8)
   frame.points:SetJustifyH("LEFT")
   frame.points:SetTextColor(0.9, 0.95, 1)
 
@@ -80,18 +103,6 @@ local function GetToastFrame()
       self:SetAlpha(1)
     end
 
-    local shine = 0
-    if age < 1 then
-      shine = age
-    elseif age > (self._duration - 1) then
-      shine = math.max(0, self._duration - age)
-    else
-      shine = 1
-    end
-    if self.glow then
-      self.glow:SetAlpha(shine * 0.7)
-    end
-
     if age >= self._duration then
       self:Hide()
     end
@@ -106,18 +117,26 @@ local function GetToastFrame()
     local pts = tonumber(nextEntry.points) or 0
     self.points:SetText(string.format("+%d Points", pts))
 
+    self.icon:SetTexture(GetFactionIcon())
+
     self._start = GetTime()
     self._playing = true
     self:SetAlpha(0)
     self:Show()
+
+    if nextEntry.playSound then
+      PlayAchievementSound()
+    end
   end
 
   return frame
 end
 
 local function EnqueueToast(title, points)
-  table.insert(QUEUE, { title = title, points = points })
   local toast = GetToastFrame()
+  local shouldPlaySound = not toast._playing and #QUEUE == 0
+
+  table.insert(QUEUE, { title = title, points = points, playSound = shouldPlaySound })
   toast:PlayNext()
 end
 
