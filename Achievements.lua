@@ -21,7 +21,16 @@ local function DB() return RepriseHCAchievementsDB end
 
 local function AdjustmentNotices()
   DB().guildFirstAdjustmentNotices = DB().guildFirstAdjustmentNotices or {}
-  return DB().guildFirstAdjustmentNotices
+
+  local notices = DB().guildFirstAdjustmentNotices
+  local version = tostring(CurrentDbVersion() or 0)
+
+  if notices._version ~= version then
+    notices = { _version = version }
+    DB().guildFirstAdjustmentNotices = notices
+  end
+
+  return notices
 end
 
 local function CurrentDbVersion()

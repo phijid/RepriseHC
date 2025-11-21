@@ -1858,24 +1858,16 @@ local function HandleIncoming(prefix, payload, channel, sender)
       end
     end
 
-    local accept, _, _, reason = ShouldAcceptIncremental(incomingVersion, sender)
-    if not accept and reason == "future" then
-      -- Deaths should apply immediately; adopt the incoming version and proceed.
-      EnsureDbVersion(incomingVersion)
-      accept = true
+    if incomingVersion < localVersion then
+      incomingVersion = localVersion
+      p.dbv = localVersion
+      p.dbVersion = localVersion
       if DebugDeathLog() then
-        debugPrint("DEATH payload forced immediate acceptance of future version", incomingVersion)
+        debugPrint("DEATH payload normalized to current db version", localVersion)
       end
     end
-    if not accept then
-      if DebugDeathLog() then
-        debugPrint(
-          "DEATH payload delayed:", reason or "?", "incoming=", incomingVersion or "?",
-          "local=", localVersion
-        )
-      end
-      return
-    end
+
+    -- Always apply deaths immediately after normalizing versions; do not queue.
     if DebugDeathLog() then
       debugPrint(
         "DEATH payload accepted from", sender or sid or "?", "when=", p.when or p.time or "?", "channel=", channel or "?"
