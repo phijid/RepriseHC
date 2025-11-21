@@ -11,7 +11,7 @@
 -- @class file
 -- @name AceSerializer-3.0
 -- @release $Id: AceSerializer-3.0.lua 1284 2022-09-25 09:15:30Z nevcairiel $
-local MAJOR,MINOR = "AceSerializer-3.0", 5
+local MAJOR,MINOR = "AceSerializer-3.0", 6
 local AceSerializer, oldminor = LibStub:NewLibrary(MAJOR, MINOR)
 
 if not AceSerializer then return end
@@ -244,9 +244,13 @@ end
 -- @param str The serialized data (from :Serialize)
 -- @return true followed by a list of values, OR false followed by an error message
 function AceSerializer:Deserialize(str)
-	str = gsub(str, "[%c ]", "")	-- ignore all control characters; nice for embedding in email and stuff
+	if type(str) ~= "string" then
+		return false, "Supplied data is not a string"
+	end
 
-	local iter = gmatch(str, "(^.)([^^]*)")	-- Any ^x followed by string of non-^
+	str = gsub(str, "[%c ]", "")    -- ignore all control characters; nice for embedding in email and stuff
+
+	local iter = gmatch(str, "(^.)([^\^]*)") -- Any ^x followed by string of non-^
 	local ctl,data = iter()
 	if not ctl or ctl~="^1" then
 		-- we purposefully ignore the data portion of the start code, it can be used as an extension mechanism
