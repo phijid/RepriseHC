@@ -1839,6 +1839,16 @@ local function HandleIncoming(prefix, payload, channel, sender)
 
 
   elseif topic == "DEATH" then
+    if DebugDeathLog() then
+      local age = nil
+      local when = tonumber(p.when or p.time)
+      if when then
+        age = (time() - math.floor(when))
+        if age < 0 then age = 0 end
+      end
+      debugPrint("DEATH payload rx from", sender or sid or "?", "age=", age, "dbv=", p.dbv or p.dbVersion or "?")
+    end
+
     local incomingVersion = tonumber(p.dbv or p.dbVersion) or 0
     if incomingVersion == 0 then
       incomingVersion = CurrentDbVersion()
@@ -2073,6 +2083,7 @@ function RepriseHC.Comm_Send(topic, payloadTable)
   end
 
   if topic == "DEATH" then
+    local delivered = usedGuild or usedGroup
     -- Try the direct 1:1 path first (when only 2 online)
     if DebugDeathLog() then
       debugPrint("Comm_Send(DEATH): trying direct send to online peer")
@@ -2082,10 +2093,27 @@ function RepriseHC.Comm_Send(topic, payloadTable)
       debugPrint("Comm_Send(DEATH): direct path", didDirect and "hit" or "skipped", "— whisper fan-out next")
     end
 
+    delivered = delivered or didDirect
+
     -- Also do the regular fan-out (covers >2 online)
-    SendWhisperFallback(wire, 12)
+    local fanoutSent = SendWhisperFallback(wire, 12)
     if DebugDeathLog() then
       debugPrint("Comm_Send(DEATH): whisper fan-out sent to 12 peers")
+    end
+
+    delivered = delivered or fanoutSent
+
+    if not delivered and C_Timer and C_Timer.After then
+      C_Timer.After(2, function()
+        local retriedGuild = SendViaGuild(wire)
+        local retriedGroup = not retriedGuild and SendViaGroup(wire)
+        local retriedFanout = SendWhisperFallback(wire, 12)
+        if DebugDeathLog() then
+          debugPrint(
+            "Comm_Send(DEATH): retry (2s) guild=", retriedGuild, "group=", retriedGroup, "fanout=", retriedFanout
+          )
+        end
+      end)
     end
 
     -- Late resend for good measure
