@@ -20,6 +20,7 @@ Core.lua
 AchievementsComm.lua
 Components/TradeMailBlock.lua
 Achievements.lua
+Components/AchievementToast.lua
 Builder/CategoryDataBuilder.lua
 Ui/Ui.lua
 Components/Cards.lua
