@@ -9,6 +9,17 @@ local TITLE_BASE_SIZE = 13
 local SOUND_PATHS = {
   "Sound\\Interface\\UI_Achievement_Toast_01.wav",
   "Sound\\Interface\\UI_Achievement_Toast.wav",
+  "Sound\\Interface\\UI_Toast_01.wav",
+}
+
+local SOUND_IDS = {
+  function()
+    if SOUNDKIT and SOUNDKIT.UI_ACHIEVEMENT_AWARDED then
+      return SOUNDKIT.UI_ACHIEVEMENT_AWARDED
+    end
+  end,
+  12891,
+  567431, -- shared toast fallback
 }
 
 local function GetFactionIcon()
@@ -23,21 +34,28 @@ local function GetFactionIcon()
 end
 
 local function PlayAchievementSound()
-  if PlaySound and SOUNDKIT and SOUNDKIT.UI_ACHIEVEMENT_AWARDED then
-    PlaySound(SOUNDKIT.UI_ACHIEVEMENT_AWARDED, "Master")
-    return
+  if PlaySound then
+    for _, idOrFn in ipairs(SOUND_IDS) do
+      local id = type(idOrFn) == "function" and idOrFn() or idOrFn
+      if id then
+        local ok = PlaySound(id, "Master")
+        if ok then
+          return true
+        end
+      end
+    end
   end
 
   if PlaySoundFile then
     for _, path in ipairs(SOUND_PATHS) do
-      PlaySoundFile(path, "Master")
-      return
+      local ok = PlaySoundFile(path, "Master")
+      if ok then
+        return true
+      end
     end
   end
 
-  if PlaySound then
-    PlaySound(12891, "Master")
-  end
+  return false
 end
 
 local function GetToastFrame()
