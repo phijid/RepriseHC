@@ -12,6 +12,7 @@ local lastPostChangeSnapshotAt = 0
 local lastSnapshotRequestAt = 0
 local lastGuildSyncAt = 0
 local PERIODIC_SYNC_INTERVAL = 60
+local lastDecodeFailureAt = 0
 local targetedSnapshotSentAt = {}
 local knownOnlineGuildmates = {}
 local TARGETED_SNAPSHOT_MIN_INTERVAL = 30
@@ -1889,6 +1890,13 @@ local function HandleIncoming(prefix, payload, channel, sender)
     if RequestFullSnapshot and (now - lastDecodeSnapshotRequestAt) > 6 then
       lastDecodeSnapshotRequestAt = now
       RequestFullSnapshot("decode-failed", true)
+    end
+    if RequestFullSnapshot then
+      local now = GetTime and GetTime() or time()
+      if now - (lastDecodeFailureAt or 0) > 4 then
+        lastDecodeFailureAt = now
+        RequestFullSnapshot("decode-failed", true)
+      end
     end
     return
   end
