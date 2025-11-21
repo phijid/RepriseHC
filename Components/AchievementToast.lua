@@ -34,7 +34,7 @@ local function GetToastFrame()
   end
 
   local frame = CreateFrame("Frame", "RepriseHC_AchievementToast", UIParent, "BackdropTemplate")
-  frame:SetSize(356, 92)
+  frame:SetSize(360, 100)
   frame:SetPoint("TOP", UIParent, "TOP", 0, -180)
   frame:SetFrameStrata("FULLSCREEN_DIALOG")
   frame:SetClampedToScreen(true)
@@ -58,20 +58,24 @@ local function GetToastFrame()
   frame.iconBG:SetTexture("Interface\\ACHIEVEMENTFRAME\\UI-Achievement-IconFrame")
   frame.iconBG:SetTexCoord(0, 0.5625, 0, 0.5625)
   frame.iconBG:SetSize(60, 60)
-  frame.iconBG:SetPoint("RIGHT", frame, "LEFT", 24, 0)
+  frame.iconBG:SetPoint("RIGHT", frame, "LEFT", 16, 0)
 
   frame.icon = frame:CreateTexture(nil, "ARTWORK")
   frame.icon:SetTexture(GetFactionIcon())
-  frame.icon:SetPoint("CENTER", frame.iconBG, "CENTER", 0, 0)
+  frame.icon:SetPoint("CENTER", frame.iconBG, "CENTER", 0, 1)
   frame.icon:SetSize(44, 44)
 
-  frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  frame.title:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -10)
-  frame.title:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -18, -10)
+  frame.content = CreateFrame("Frame", nil, frame)
+  frame.content:SetPoint("TOPLEFT", frame, "TOPLEFT", 72, -12)
+  frame.content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 14)
+
+  frame.title = frame.content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  frame.title:SetPoint("TOPLEFT", frame.content, "TOPLEFT", 0, 0)
+  frame.title:SetPoint("TOPRIGHT", frame.content, "TOPRIGHT", 0, 0)
   frame.title:SetJustifyH("LEFT")
   frame.title:SetJustifyV("TOP")
   frame.title:SetWordWrap(true)
-  frame.title:SetMaxLines(2)
+  frame.title:SetMaxLines(3)
   frame.title:SetTextColor(1, 0.82, 0)
   do
     local font, _, flags = frame.title:GetFont()
@@ -80,9 +84,9 @@ local function GetToastFrame()
     end
   end
 
-  frame.points = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  frame.points:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 18, 10)
-  frame.points:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 10)
+  frame.points = frame.content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  frame.points:SetPoint("BOTTOMLEFT", frame.content, "BOTTOMLEFT", 0, 0)
+  frame.points:SetPoint("BOTTOMRIGHT", frame.content, "BOTTOMRIGHT", 0, 0)
   frame.points:SetJustifyH("CENTER")
   frame.points:SetTextColor(0.9, 0.95, 1)
 
@@ -90,10 +94,11 @@ local function GetToastFrame()
   frame._fade = FADE_DURATION
 
   function frame:EnsureTitleFits()
-    local maxWidth = self:GetWidth() - 36
+    local maxWidth = self.content:GetWidth()
     local text = self.title:GetText() or ""
+    local availableHeight = math.max(20, self.content:GetHeight() - (self.points:GetStringHeight() or 0) - 6)
     self.title:SetMaxLines(2)
-    FitFontString(self.title, text, maxWidth, 2, 3)
+    FitFontString(self.title, text, maxWidth, 2, 3, availableHeight)
   end
 
   frame:SetScript("OnHide", function(self)
@@ -158,7 +163,7 @@ local function GetToastFrame()
   return frame
 end
 
-function FitFontString(fs, text, maxWidth, maxLines, fallbackLines)
+function FitFontString(fs, text, maxWidth, maxLines, fallbackLines, maxHeight)
   if not fs or not text or not maxWidth then return end
 
   local font, _, flags = fs:GetFont()
@@ -175,7 +180,8 @@ function FitFontString(fs, text, maxWidth, maxLines, fallbackLines)
     local overWidth = fs:GetStringWidth() > maxWidth
     local lineHeight = fs:GetLineHeight() or size
     local overHeight = fs:GetStringHeight() > (lineHeight * limitLines)
-    return overWidth or overHeight
+    local overBounds = maxHeight and (fs:GetStringHeight() > maxHeight)
+    return overWidth or overHeight or overBounds
   end
 
   while size > TITLE_MIN_SIZE and exceeds() do
