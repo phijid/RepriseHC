@@ -277,20 +277,46 @@ function RepriseHC.RenderCategory(page, catName)
   if cardW < 200 then cols = 2; usable = innerW - leftPad - (gutter * (cols - 1)); cardW = math.floor(usable / cols) end
   local cardH = (catName == "Dungeons") and 110 or 84
 
-  local col = 0
-  local x = leftPad
-  local rowTopY = y
+  local totalRows = math.ceil(#list / cols)
+  local totalHeight = -y + (math.max(0, totalRows - 1) * (cardH + 8)) + 12
 
-  for _, ach in ipairs(list) do
-    local earned = got[ach.id]
-    local locked = ach.locked
-    local winner = ach.winner
-    local nm = ach.name or ""
-    MakeCard(page, x, rowTopY, cardW, cardH, nm, ach.points or 0, earned, locked, winner, ach.id)
-    col = col + 1
-    if col >= cols then col = 0; x = leftPad; rowTopY = rowTopY - (cardH + 8); y = rowTopY
-    else x = x + cardW + gutter end
+  -- Building every card in a single frame causes noticeable hitching on large
+  -- lists (e.g., Quest Milestones, Professions). Build them in small batches
+  -- across multiple frames so the UI can keep rendering while we work.
+  local cancelled = false
+  page:HookScript("OnHide", function() cancelled = true end)
+
+  local function BuildBatch(startIndex)
+    if cancelled or not page:IsShown() then return end
+
+    local created = 0
+    local index = startIndex
+    while index <= #list and created < 10 do
+      local ach = list[index]
+      local earned = got[ach.id]
+      local locked = ach.locked
+      local winner = ach.winner
+      local nm = ach.name or ""
+
+      local row = math.floor((index - 1) / cols)
+      local col = (index - 1) % cols
+      local x = leftPad + (col * (cardW + gutter))
+      local rowTopY = y - (row * (cardH + 8))
+
+      MakeCard(page, x, rowTopY, cardW, cardH, nm, ach.points or 0, earned, locked, winner, ach.id)
+
+      created = created + 1
+      index = index + 1
+    end
+
+    if index <= #list and not cancelled then
+      C_Timer.After(0, function()
+        BuildBatch(index)
+      end)
+    end
   end
 
-  return -y + 12
+  BuildBatch(1)
+
+  return totalHeight
 end
